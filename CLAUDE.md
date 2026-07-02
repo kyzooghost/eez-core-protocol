@@ -73,6 +73,7 @@ struct ExecutionEntry {
     uint256              callCount;             // top-level iterations (partition invariant below)
     bytes                returnData;            // pre-computed return data for the entry's top-level call
     bytes32              rollingHash;           // expected hash after all calls + nestings
+    // L1 does not yet carry crossChainRollingHash; L2 support is implemented first.
 }
 
 struct ExpectedLookup {            // NESTED lookup — lives inside the entry; matched by 4-tuple
@@ -86,6 +87,7 @@ struct ExpectedLookup {            // NESTED lookup — lives inside the entry; 
     ExpectedL1ToL2Call[] expectedL1ToL2Calls;     // reverted-mode reentrant table
     uint256              callCount;               // reverted-mode top-level iterations
     bytes32              rollingHash;             // expected hash of executed sub-calls
+    // L1 does not yet carry crossChainRollingHash; L2 support is implemented first.
 }
 
 struct ExpectedStateRootPerRollup {
@@ -103,6 +105,7 @@ struct LookupCall {                // TOP-LEVEL lookup — storage pool; consuma
     ExpectedLookup[]     expectedLookups;         // reverted-mode nested lookups for the sub-execution
     uint256              callCount;               // reverted-mode top-level iterations
     bytes32              rollingHash;             // expected hash of executed sub-calls
+    // L1 does not yet carry crossChainRollingHash; L2 support is implemented first.
     ExpectedStateRootPerRollup[] expectedStateRoots;  // state-root pins (L1 only)
 }
 ```
@@ -140,6 +143,7 @@ struct ExecutionEntry {
     uint256                          callCount;
     bytes                            returnData;
     bytes32                          rollingHash;
+    bytes32                          crossChainRollingHash; // post-order fold of (crossChainCallHash, success, returnData)
 }
 
 struct ExpectedLookup {            // NESTED lookup — inside the entry; matched by 4-tuple
@@ -153,6 +157,7 @@ struct ExpectedLookup {            // NESTED lookup — inside the entry; matche
     ExpectedOutgoingCrossChainCall[] expectedOutgoingCalls;
     uint256                          callCount;
     bytes32                          rollingHash;
+    bytes32                          crossChainRollingHash; // sub-calls then own lookup event
 }
 
 struct LookupCall {                // TOP-LEVEL lookup — persistent pool; matched by hash alone
@@ -164,6 +169,7 @@ struct LookupCall {                // TOP-LEVEL lookup — persistent pool; matc
     ExpectedLookup[]                 expectedLookups;
     uint256                          callCount;
     bytes32                          rollingHash;
+    bytes32                          crossChainRollingHash; // sub-calls then own lookup event
 }
 ```
 
@@ -237,11 +243,11 @@ NESTED_BEGIN (3)   keccak256(prev, 0x03, nestedNumber)
 NESTED_END   (4)   keccak256(prev, 0x04, nestedNumber)
 ```
 
-One mismatch anywhere — wrong return data, wrong success flag, missing/extra calls, wrong nesting — changes the final hash and is caught with one comparison. End-of-entry checks: rolling hash, flat-call cursor == flat array length, reentrant cursor == reentrant table length, and (L1) the ether-delta invariant. Static lookup sub-calls use a simpler untagged accumulator (`keccak256(prev, success, retData)`) verified against `LookupCall.rollingHash`. See `docs/CORE_PROTOCOL_SPEC.md` §E.
+One mismatch anywhere — wrong return data, wrong success flag, missing/extra calls, wrong nesting — changes the final hash and is caught with one comparison. L2 also verifies an independent `crossChainRollingHash` that folds `(crossChainCallHash, success, returnData)` at boundary-call completion in post-order. End-of-entry checks: rolling hash, L2 cross-chain rolling hash, flat-call cursor == flat array length, reentrant cursor == reentrant table length, and (L1) the ether-delta invariant. Static lookup sub-calls use a simpler untagged accumulator (`keccak256(prev, success, retData)`) verified against `LookupCall.rollingHash`; L2 additionally verifies the lookup's `crossChainRollingHash` by folding sub-calls and then the lookup's own event. See `docs/CORE_PROTOCOL_SPEC.md` §E.
 
 ### `revertSpan`
 
-`revertSpan > 0` is the forced-revert mechanism: the next `revertSpan` calls execute, succeed, and have their EVM state effects rolled back at the protocol layer. The processor self-calls `executeInContextAndRevert(revertSpan)`, which always reverts with `ContextResult(rollingHash, reentrantConsumed, callsProcessed, callNotFound)` — state rolls back, the cursors and hash escape via the revert payload and are restored by the outer frame. Use only for forced reverts (e.g. a call that ran cleanly on the destination but was rolled back in the source's view). Naturally-reverting destinations need `revertSpan = 0` — the proxy `.call` already captures `(false, retData)` into `CALL_END`.
+`revertSpan > 0` is the forced-revert mechanism: the next `revertSpan` calls execute, succeed, and have their EVM state effects rolled back at the protocol layer. The processor self-calls `executeInContextAndRevert(revertSpan)`, which always reverts with `ContextResult(rollingHash, reentrantConsumed, callsProcessed, callNotFound, crossChainRollingHash)` — state rolls back, the cursors and hashes escape via the revert payload and are restored by the outer frame. L1 emits `bytes32(0)` for the fifth field and decodes it for wire compatibility; L2 carries the live cross-chain accumulator. Use only for forced reverts (e.g. a call that ran cleanly on the destination but was rolled back in the source's view). Naturally-reverting destinations need `revertSpan = 0` — the proxy `.call` already captures `(false, retData)` into `CALL_END`.
 
 ### Reentrant success vs failure
 

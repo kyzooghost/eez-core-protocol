@@ -76,6 +76,7 @@ struct ExpectedLookup {
     ExpectedL1ToL2Call[] expectedL1ToL2Calls; // reverted-mode reentrant table
     uint256              callCount;    // reverted-mode top-level iteration count — see §3
     bytes32 rollingHash;               // expected hash of the executed sub-calls
+    // L1 does not yet carry crossChainRollingHash; L2 support is implemented first.
 }
 
 /// TOP-LEVEL lookup — lives in the storage pool; consumable only outside an execution.
@@ -91,6 +92,7 @@ struct LookupCall {
     ExpectedLookup[]     expectedLookups;   // nested lookups consumed while a reverted lookup executes
     uint256              callCount;
     bytes32 rollingHash;
+    // L1 does not yet carry crossChainRollingHash; L2 support is implemented first.
     ExpectedStateRootPerRollup[] expectedStateRoots; // part of the MATCH — see §6
 }
 ```
@@ -161,8 +163,10 @@ Branches on `_insideExecution()`:
   live** (§6).
 
 Both branches resolve through `_resolveStaticLookup`: run the sub-calls statically, require the
-untagged hash to equal `rollingHash` (an empty array must carry `rollingHash == 0`), then
-return `returnData` — or revert with it when `failed`.
+untagged hash to equal `rollingHash` (an empty array must carry `rollingHash == 0`), then verify
+the L2 `crossChainRollingHash` by folding each static sub-call's `(crossChainCallHash, success,
+retData)` followed by the lookup's own `(lookupHash, !failed, returnData)` event. The resolver
+then returns `returnData` — or reverts with it when `failed`.
 
 ### Execution context (reverted lookups) — `_executeRevertedNestedLookup` / `_executeRevertedTopLevelLookup`
 Both run inline in the consuming `executeCrossChainCall` frame and share `_executeRevertedLookup`:
@@ -172,9 +176,10 @@ set the sub-execution pointers:
   nested:    _revertedLookupIndex = index; _insideRevertedLookup = true
   top-level: _topLevelLookupIndex = index; _revertedLookupTopLevel = true
              (+ _revertedLookupRollupId = destinationRollupId on L1, to re-derive the pool)
-reset sub-cursors (_rollingHash, _currentL2ToL1Call, _lastL1ToL2CallConsumed = 0)
+reset sub-cursors (_rollingHash, L2 _crossChainRollingHash, _currentL2ToL1Call, _lastL1ToL2CallConsumed = 0)
 _processNCalls(callCount)                  // 0 ⇒ no-op; reentry → _consumeNestedAction
 require _rollingHash == rollingHash
+require L2 _crossChainRollingHash folded with the lookup's own event == crossChainRollingHash
 require _currentL2ToL1Call == l2ToL1Calls.length          // partition invariant
 require _lastL1ToL2CallConsumed == expectedL1ToL2Calls.length
 revert(returnData)
