@@ -28,6 +28,7 @@ import {
     noL2LookupCalls,
     noNestedActions,
     noCalls,
+    l2CrossChainRollingHashFold,
     RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
@@ -68,7 +69,11 @@ abstract contract TwoDiffActions {
         return crossChainCallHash(MAINNET_ROLLUP_ID, target, 0, _incrementCallData(), l2Caller, L2_ROLLUP_ID);
     }
 
-    function _l1Entries(address counterA, address counterB, address caller)
+    function _l1Entries(
+        address counterA,
+        address counterB,
+        address caller
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -123,7 +128,11 @@ abstract contract TwoDiffActions {
     /// L1). Each entry's proxyEntryHash matches the L1 entry with the same
     /// target. Both entries return abi.encode(1) (each L2 counter starts at
     /// 0 and is incremented once).
-    function _l2Entries(address counterA, address counterB, address l2Caller)
+    function _l2Entries(
+        address counterA,
+        address counterB,
+        address l2Caller
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -136,7 +145,11 @@ abstract contract TwoDiffActions {
         entries[1] = _buildL2Entry(counterB, l2Caller, hB);
     }
 
-    function _buildL2Entry(address target, address l2Caller, bytes32 entryHash)
+    function _buildL2Entry(
+        address target,
+        address l2Caller,
+        bytes32 entryHash
+    )
         private
         pure
         returns (L2ExecutionEntry memory)
@@ -164,7 +177,8 @@ abstract contract TwoDiffActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: retData,
-            rollingHash: rh
+            rollingHash: rh,
+            crossChainRollingHash: l2CrossChainRollingHashFold(bytes32(0), L2_ROLLUP_ID, calls[0], true, retData)
         });
     }
 }

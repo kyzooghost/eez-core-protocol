@@ -27,6 +27,8 @@ import {
     noStaticCalls,
     noLookupCalls,
     crossChainCallHash,
+    l2CrossChainRollingHashFold,
+    crossChainRollingHashFold,
     RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
@@ -129,6 +131,20 @@ abstract contract DeepNestedActions {
         h = h.appendCallEnd(2, true, ""); // calls[0] ends (_ccn still 2)
     }
 
+    function _expectedCrossChainRollingHash(
+        CrossChainCall[] memory calls,
+        ExpectedOutgoingCrossChainCall[] memory nested
+    )
+        internal
+        pure
+        returns (bytes32 h)
+    {
+        h = crossChainRollingHashFold(h, nested[1].crossChainCallHash, true, nested[1].returnData);
+        h = l2CrossChainRollingHashFold(h, L2_ROLLUP_ID, calls[1], true, "");
+        h = crossChainRollingHashFold(h, nested[0].crossChainCallHash, true, nested[0].returnData);
+        h = l2CrossChainRollingHashFold(h, L2_ROLLUP_ID, calls[0], true, "");
+    }
+
     // ── L2 mirror action hashes ──
     // On L2, reentrant calls hash with sourceRollupId = ROLLUP_ID = L2_ROLLUP_ID (forced by
     // executeCrossChainCall). The cross-chain proxies on L2 are created with originalRollupId =
@@ -162,7 +178,12 @@ abstract contract DeepNestedActions {
         );
     }
 
-    function _l1Entries(address counterL2, address cap, address nestedCaller, address alice)
+    function _l1Entries(
+        address counterL2,
+        address cap,
+        address nestedCaller,
+        address alice
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -234,7 +255,12 @@ abstract contract DeepNestedActions {
     /// L2 contracts (NestedCaller → CAP → Counter) wired via cross-chain proxies on
     /// L2 that route back through managerL2, so the nested-call consumption fires
     /// identically. The rolling hash is byte-for-byte identical to the L1 entry's.
-    function _l2Entries(address counterL2, address capL2, address ncL2, address alice)
+    function _l2Entries(
+        address counterL2,
+        address capL2,
+        address ncL2,
+        address alice
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -265,10 +291,14 @@ abstract contract DeepNestedActions {
 
         ExpectedOutgoingCrossChainCall[] memory nested = new ExpectedOutgoingCrossChainCall[](2);
         nested[0] = ExpectedOutgoingCrossChainCall({
-            crossChainCallHash: _l2CapActionHash(capL2, ncL2), callCount: 1, returnData: ""
+            crossChainCallHash: _l2CapActionHash(capL2, ncL2),
+            callCount: 1,
+            returnData: ""
         });
         nested[1] = ExpectedOutgoingCrossChainCall({
-            crossChainCallHash: _l2CounterActionHash(counterL2, capL2), callCount: 0, returnData: abi.encode(uint256(1))
+            crossChainCallHash: _l2CounterActionHash(counterL2, capL2),
+            callCount: 0,
+            returnData: abi.encode(uint256(1))
         });
 
         entries = new L2ExecutionEntry[](1);
@@ -279,7 +309,8 @@ abstract contract DeepNestedActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: _expectedRollingHash()
+            rollingHash: _expectedRollingHash(),
+            crossChainRollingHash: _expectedCrossChainRollingHash(calls, nested)
         });
     }
 }
@@ -475,16 +506,15 @@ contract ExecuteL2 is Script, DeepNestedActions {
         vm.startBroadcast();
         address alice = msg.sender;
 
-        EEZL2(managerAddr)
-            .executeIncomingCrossChainCall(
-                ncL2,
-                0,
-                abi.encodeWithSelector(NestedCaller.callNested.selector),
-                alice,
-                MAINNET_ROLLUP_ID,
-                _l2Entries(counterL2, capL2, ncL2, alice),
-                new L2LookupCall[](0)
-            );
+        EEZL2(managerAddr).executeIncomingCrossChainCall(
+            ncL2,
+            0,
+            abi.encodeWithSelector(NestedCaller.callNested.selector),
+            alice,
+            MAINNET_ROLLUP_ID,
+            _l2Entries(counterL2, capL2, ncL2, alice),
+            new L2LookupCall[](0)
+        );
 
         console.log("done");
         console.log("nc.counter=%s", NestedCaller(ncL2).counter());

@@ -21,7 +21,13 @@ import {
 } from "../../../src/interfaces/IEEZL2.sol";
 import {Counter, SafeCounterAndProxy} from "../../../test/mocks/CounterContracts.sol";
 import {ComputeExpectedBase} from "../shared/ComputeExpectedBase.sol";
-import {crossChainCallHash, noLookupCalls, RollingHashBuilder} from "../shared/E2EHelpers.sol";
+import {
+    crossChainCallHash,
+    noLookupCalls,
+    l2CrossChainRollingHashFold,
+    crossChainRollingHashFold,
+    RollingHashBuilder
+} from "../shared/E2EHelpers.sol";
 
 // ═══════════════════════════════════════════════════════════════════════
 //  NestedCallRevert - nested reentrant call that fails; caller recovers
@@ -85,7 +91,11 @@ abstract contract NestedCallRevertActions {
         h = h.appendCallEnd(1, true, "");
     }
 
-    function _l1Entries(address scap, address alice, address counterL2)
+    function _l1Entries(
+        address scap,
+        address alice,
+        address counterL2
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -172,7 +182,11 @@ abstract contract NestedCallRevertActions {
         );
     }
 
-    function _l2Entries(address scapL2, address batcherL1, address counterL1)
+    function _l2Entries(
+        address scapL2,
+        address batcherL1,
+        address counterL1
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -196,7 +210,8 @@ abstract contract NestedCallRevertActions {
             expectedLookups: _l2NestedLookups(counterL1, scapL2),
             callCount: 1,
             returnData: "",
-            rollingHash: _expectedRollingHash()
+            rollingHash: _expectedRollingHash(),
+            crossChainRollingHash: l2CrossChainRollingHashFold(bytes32(0), L2_ROLLUP_ID, calls[0], true, "")
         });
     }
 
@@ -204,7 +219,10 @@ abstract contract NestedCallRevertActions {
     ///      Same mechanism as the L1 side — _consumeNestedAction falls back to the entry's
     ///      `expectedLookups` and reverts with `returnData` when the key
     ///      (hash, callNumber=1, lastOutgoingCallConsumed=0) matches.
-    function _l2NestedLookups(address counterL1, address scapL2)
+    function _l2NestedLookups(
+        address counterL1,
+        address scapL2
+    )
         internal
         pure
         returns (L2ExpectedLookup[] memory nested)
@@ -220,7 +238,10 @@ abstract contract NestedCallRevertActions {
             incomingCalls: new CrossChainCall[](0),
             expectedOutgoingCalls: new ExpectedOutgoingCrossChainCall[](0),
             callCount: 0,
-            rollingHash: bytes32(0)
+            rollingHash: bytes32(0),
+            crossChainRollingHash: crossChainRollingHashFold(
+                bytes32(0), _innerActionHashL2(counterL1, scapL2), false, bytes("inner reverts")
+            )
         });
     }
 }
@@ -383,16 +404,15 @@ contract ExecuteL2 is Script, NestedCallRevertActions {
         address triggerSource = msg.sender;
         console.log("ExecuteL2: manager=%s scapL2=%s triggerSource=%s", managerAddr, scapL2, triggerSource);
 
-        EEZL2(managerAddr)
-            .executeIncomingCrossChainCall(
-                scapL2,
-                0,
-                abi.encodeWithSelector(SafeCounterAndProxy.incrementProxy.selector),
-                triggerSource,
-                MAINNET_ROLLUP_ID,
-                _l2Entries(scapL2, triggerSource, counterL1),
-                new L2LookupCall[](0) // nested reverted lookup now lives inside the entry
-            );
+        EEZL2(managerAddr).executeIncomingCrossChainCall(
+            scapL2,
+            0,
+            abi.encodeWithSelector(SafeCounterAndProxy.incrementProxy.selector),
+            triggerSource,
+            MAINNET_ROLLUP_ID,
+            _l2Entries(scapL2, triggerSource, counterL1),
+            new L2LookupCall[](0) // nested reverted lookup now lives inside the entry
+        );
 
         console.log("ExecuteL2: done");
         console.log("scapL2.counter=%s", SafeCounterAndProxy(scapL2).counter());

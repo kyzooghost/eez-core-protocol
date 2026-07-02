@@ -26,6 +26,8 @@ import {
     noLookupCalls,
     noNestedActions,
     noCalls,
+    l2CrossChainRollingHashFold,
+    crossChainRollingHashFold,
     RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
@@ -131,7 +133,11 @@ abstract contract RevertContinueActions {
         );
     }
 
-    function _l2Entries(address selfCallerL2, address counterL1, address batcherL1)
+    function _l2Entries(
+        address selfCallerL2,
+        address counterL1,
+        address batcherL1
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -162,11 +168,22 @@ abstract contract RevertContinueActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: _expectedRollingHash()
+            rollingHash: _expectedRollingHash(),
+            crossChainRollingHash: l2CrossChainRollingHashFold(
+                crossChainRollingHashFold(bytes32(0), nested[0].crossChainCallHash, true, nested[0].returnData),
+                L2_ROLLUP_ID,
+                calls[0],
+                true,
+                ""
+            )
         });
     }
 
-    function _l1Entries(address selfCaller, address counterL2, address batcher)
+    function _l1Entries(
+        address selfCaller,
+        address counterL2,
+        address batcher
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -355,16 +372,15 @@ contract ExecuteL2 is Script, RevertContinueActions {
         address triggerSource = msg.sender;
         console.log("ExecuteL2: manager=%s selfCallerL2=%s triggerSource=%s", managerAddr, selfCallerL2, triggerSource);
 
-        EEZL2(managerAddr)
-            .executeIncomingCrossChainCall(
-                selfCallerL2,
-                0,
-                abi.encodeWithSelector(SelfCallerWithRevert.execute.selector),
-                triggerSource,
-                MAINNET_ROLLUP_ID,
-                _l2Entries(selfCallerL2, counterL1, triggerSource),
-                new L2LookupCall[](0)
-            );
+        EEZL2(managerAddr).executeIncomingCrossChainCall(
+            selfCallerL2,
+            0,
+            abi.encodeWithSelector(SelfCallerWithRevert.execute.selector),
+            triggerSource,
+            MAINNET_ROLLUP_ID,
+            _l2Entries(selfCallerL2, counterL1, triggerSource),
+            new L2LookupCall[](0)
+        );
 
         console.log("ExecuteL2: done");
         console.log("selfCallerL2.lastResult=%s", SelfCallerWithRevert(selfCallerL2).lastResult());

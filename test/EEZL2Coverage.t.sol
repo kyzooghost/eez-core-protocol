@@ -89,7 +89,40 @@ contract EEZL2CoverageTest is Test {
         return keccak256(abi.encodePacked(bytes32(0), true, ret));
     }
 
-    function _cc(address tgt, uint256 value_, bytes memory data, address src, uint256 srcRollup)
+    function _crossChainRollingHashFold(
+        bytes32 prev,
+        CrossChainCall memory cc,
+        bool success,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        bytes32 callHash =
+            _hash(TEST_ROLLUP_ID, cc.targetAddress, cc.value, cc.data, cc.sourceAddress, cc.sourceRollupId);
+        return keccak256(abi.encodePacked(prev, callHash, success, retData));
+    }
+
+    function _crossChainRollingHashLookup(
+        bytes32 lookupHash,
+        bool success,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(bytes32(0), lookupHash, success, retData));
+    }
+
+    function _cc(
+        address tgt,
+        uint256 value_,
+        bytes memory data,
+        address src,
+        uint256 srcRollup
+    )
         internal
         pure
         returns (CrossChainCall memory)
@@ -141,6 +174,7 @@ contract EEZL2CoverageTest is Test {
         entry.callCount = 1;
         entry.returnData = "";
         entry.rollingHash = _rollingHashSingleCall("");
+        entry.crossChainRollingHash = _crossChainRollingHashFold(bytes32(0), calls[0], true, "");
         _loadSingle(entry, new LookupCall[](0));
 
         uint256 sysBefore = SYSTEM_ADDRESS.balance;
@@ -166,6 +200,7 @@ contract EEZL2CoverageTest is Test {
         entry.expectedOutgoingCalls = new ExpectedOutgoingCrossChainCall[](0);
         entry.callCount = 1;
         entry.rollingHash = _rollingHashSingleCall("");
+        entry.crossChainRollingHash = _crossChainRollingHashFold(bytes32(0), calls[0], true, "");
         ExecutionEntry[] memory entries = new ExecutionEntry[](1);
         entries[0] = entry;
         vm.prank(address(rejecter));
@@ -194,9 +229,9 @@ contract EEZL2CoverageTest is Test {
         vm.deal(SYSTEM_ADDRESS, 10);
         vm.prank(SYSTEM_ADDRESS);
         vm.expectRevert(EEZL2.ValueMismatch.selector);
-        manager.executeIncomingCrossChainCall{
-            value: 1
-        }(address(target), 5, "", address(this), REMOTE_ROLLUP_ID, entries, new LookupCall[](0));
+        manager.executeIncomingCrossChainCall{value: 1}(
+            address(target), 5, "", address(this), REMOTE_ROLLUP_ID, entries, new LookupCall[](0)
+        );
     }
 
     function test_IncomingCrossChainCall_NotSystem() public {
@@ -250,11 +285,12 @@ contract EEZL2CoverageTest is Test {
         entries[0].callCount = 1;
         entries[0].returnData = abi.encode(uint256(777));
         entries[0].rollingHash = _rollingHashSingleCall("");
+        entries[0].crossChainRollingHash = _crossChainRollingHashFold(bytes32(0), calls[0], true, "");
 
         vm.prank(SYSTEM_ADDRESS);
-        bytes memory ret = manager.executeIncomingCrossChainCall{
-            value: value
-        }(address(target), value, data, sourceAddr, sourceRollup, entries, new LookupCall[](0));
+        bytes memory ret = manager.executeIncomingCrossChainCall{value: value}(
+            address(target), value, data, sourceAddr, sourceRollup, entries, new LookupCall[](0)
+        );
 
         assertEq(ret, abi.encode(uint256(777)));
         assertEq(target.value(), 123);
@@ -319,6 +355,9 @@ contract EEZL2CoverageTest is Test {
         entry.callCount = 1; // outer frame runs calls[0]
         entry.returnData = "";
         entry.rollingHash = h;
+        bytes32 crossChainHash = _crossChainRollingHashFold(bytes32(0), calls[1], true, innerActualRet);
+        crossChainHash = keccak256(abi.encodePacked(crossChainHash, innerHash, true, outgoingRet));
+        entry.crossChainRollingHash = _crossChainRollingHashFold(crossChainHash, calls[0], true, "");
         _loadSingle(entry, new LookupCall[](0));
 
         (bool ok,) = outerProxy.call(outerCd);
@@ -350,6 +389,7 @@ contract EEZL2CoverageTest is Test {
         lookups[0].expectedOutgoingCalls = new ExpectedOutgoingCrossChainCall[](0);
         lookups[0].expectedLookups = new ExpectedLookup[](0);
         lookups[0].rollingHash = bytes32(0);
+        lookups[0].crossChainRollingHash = _crossChainRollingHashLookup(h, true, payload);
         _loadEntries(new ExecutionEntry[](0), lookups);
 
         vm.prank(proxy);
@@ -371,6 +411,7 @@ contract EEZL2CoverageTest is Test {
         lookups[0].expectedOutgoingCalls = new ExpectedOutgoingCrossChainCall[](0);
         lookups[0].expectedLookups = new ExpectedLookup[](0);
         lookups[0].rollingHash = bytes32(0);
+        lookups[0].crossChainRollingHash = _crossChainRollingHashLookup(h, false, payload);
         _loadEntries(new ExecutionEntry[](0), lookups);
 
         vm.prank(proxy);
@@ -440,6 +481,8 @@ contract EEZL2CoverageTest is Test {
         lookups[0].expectedOutgoingCalls = new ExpectedOutgoingCrossChainCall[](0);
         lookups[0].expectedLookups = new ExpectedLookup[](0);
         lookups[0].rollingHash = subHash;
+        bytes32 crossChainHash = _crossChainRollingHashFold(bytes32(0), subCalls[0], true, subRet);
+        lookups[0].crossChainRollingHash = keccak256(abi.encodePacked(crossChainHash, h, true, payload));
         _loadEntries(new ExecutionEntry[](0), lookups);
 
         vm.prank(proxy);
@@ -517,7 +560,8 @@ contract EEZL2CoverageTest is Test {
             incomingCalls: new CrossChainCall[](0),
             expectedOutgoingCalls: new ExpectedOutgoingCrossChainCall[](0),
             callCount: 0,
-            rollingHash: bytes32(0)
+            rollingHash: bytes32(0),
+            crossChainRollingHash: _crossChainRollingHashLookup(innerHash, true, payload)
         });
 
         // Outer call returns abi.encode(uint256(77)).
@@ -531,6 +575,7 @@ contract EEZL2CoverageTest is Test {
         entry.callCount = 1;
         entry.returnData = "";
         entry.rollingHash = h;
+        entry.crossChainRollingHash = _crossChainRollingHashFold(bytes32(0), calls[0], true, abi.encode(innerResult));
         _loadSingle(entry, new LookupCall[](0));
 
         address outerProxy = manager.createCrossChainProxy(address(reader), REMOTE_ROLLUP_ID);
@@ -578,6 +623,5 @@ contract EEZL2CoverageTest is Test {
 }
 
 contract RejectEther {
-    // No payable receive/fallback → any value transfer reverts.
-
-    }
+// No payable receive/fallback → any value transfer reverts.
+}

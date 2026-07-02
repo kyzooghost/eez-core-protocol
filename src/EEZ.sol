@@ -1080,7 +1080,7 @@ contract EEZ is EEZBase {
                 catch (bytes memory revertData) {
                     // Direct assign is still an OR-merge: the inner frame inherits the outer
                     // flag and never clears it, so a span no-match survives the forced revert.
-                    (_rollingHash, _lastL1ToL2CallConsumed, _currentL2ToL1Call, _l1ToL2CallNotFound) =
+                    (_rollingHash, _lastL1ToL2CallConsumed, _currentL2ToL1Call, _l1ToL2CallNotFound,) =
                         _decodeContextResult(revertData);
                 }
 
@@ -1096,7 +1096,7 @@ contract EEZ is EEZBase {
     function executeInContextAndRevert(uint256 callCount) external {
         if (msg.sender != address(this)) revert NotSelf();
         _processNCalls(callCount);
-        revert ContextResult(_rollingHash, _lastL1ToL2CallConsumed, _currentL2ToL1Call, _l1ToL2CallNotFound);
+        revert ContextResult(_rollingHash, _lastL1ToL2CallConsumed, _currentL2ToL1Call, _l1ToL2CallNotFound, bytes32(0));
     }
 
     /// @notice Validates and applies state deltas; sums ether deltas across rollups

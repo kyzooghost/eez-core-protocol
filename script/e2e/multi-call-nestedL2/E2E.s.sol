@@ -21,7 +21,15 @@ import {
 } from "../../../src/interfaces/IEEZL2.sol";
 import {Counter, CounterAndProxy} from "../../../test/mocks/CounterContracts.sol";
 import {ComputeExpectedBase} from "../shared/ComputeExpectedBase.sol";
-import {Action, actionHash, noLookupCalls, noL2LookupCalls, RollingHashBuilder} from "../shared/E2EHelpers.sol";
+import {
+    Action,
+    actionHash,
+    noLookupCalls,
+    noL2LookupCalls,
+    l2CrossChainRollingHashFold,
+    crossChainRollingHashFold,
+    RollingHashBuilder
+} from "../shared/E2EHelpers.sol";
 
 // ═══════════════════════════════════════════════════════════════════════
 //  MultiCallNestedL2 — L2-side mirror of multi-call-nested
@@ -91,6 +99,20 @@ abstract contract MultiCallNestedL2Actions {
         h = h.appendCallEnd(1, true, abi.encode(retVal));
     }
 
+    function _expectedCrossChainRollingHash(
+        CrossChainCall[] memory calls,
+        ExpectedOutgoingCrossChainCall[] memory nested
+    )
+        internal
+        pure
+        returns (bytes32 h)
+    {
+        h = crossChainRollingHashFold(h, nested[0].crossChainCallHash, true, nested[0].returnData);
+        h = l2CrossChainRollingHashFold(h, L2_ROLLUP_ID, calls[0], true, "");
+        h = crossChainRollingHashFold(h, nested[1].crossChainCallHash, true, nested[1].returnData);
+        h = l2CrossChainRollingHashFold(h, L2_ROLLUP_ID, calls[1], true, "");
+    }
+
     /// @dev L1 mirror entries. Two system-driven entries (proxyEntryHash=0), each draining
     ///      one Counter.increment() call on L1. Each call surfaces on L1 as a top-level
     ///      cross-chain invocation from CAP (on L2) to Counter (on MAINNET). Each entry is
@@ -150,7 +172,11 @@ abstract contract MultiCallNestedL2Actions {
         });
     }
 
-    function _l2Entries(address counterL1, address cap, address alice)
+    function _l2Entries(
+        address counterL1,
+        address cap,
+        address alice
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -178,10 +204,14 @@ abstract contract MultiCallNestedL2Actions {
         bytes32 innerHash = _innerActionHash(counterL1, cap);
         ExpectedOutgoingCrossChainCall[] memory nested = new ExpectedOutgoingCrossChainCall[](2);
         nested[0] = ExpectedOutgoingCrossChainCall({
-            crossChainCallHash: innerHash, callCount: 0, returnData: abi.encode(uint256(1))
+            crossChainCallHash: innerHash,
+            callCount: 0,
+            returnData: abi.encode(uint256(1))
         });
         nested[1] = ExpectedOutgoingCrossChainCall({
-            crossChainCallHash: innerHash, callCount: 0, returnData: abi.encode(uint256(2))
+            crossChainCallHash: innerHash,
+            callCount: 0,
+            returnData: abi.encode(uint256(2))
         });
 
         entries = new L2ExecutionEntry[](1);
@@ -192,7 +222,8 @@ abstract contract MultiCallNestedL2Actions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 2,
             returnData: "",
-            rollingHash: _expectedRollingHash()
+            rollingHash: _expectedRollingHash(),
+            crossChainRollingHash: _expectedCrossChainRollingHash(calls, nested)
         });
     }
 }

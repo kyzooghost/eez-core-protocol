@@ -22,11 +22,7 @@ import {
 import {Counter} from "../../../test/mocks/CounterContracts.sol";
 import {ComputeExpectedBase} from "../shared/ComputeExpectedBase.sol";
 import {
-    crossChainCallHash,
-    noLookupCalls,
-    noNestedActions,
-    noCalls,
-    RollingHashBuilder
+    crossChainCallHash, noLookupCalls, noNestedActions, noCalls, l2CrossChainRollingHashFold, RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -105,7 +101,11 @@ abstract contract RevertActions {
         h = h.appendCallEnd(1, true, _successReturnData());
     }
 
-    function _l1Entries(address counterL1, address counterL2, address alice)
+    function _l1Entries(
+        address counterL1,
+        address counterL2,
+        address alice
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -175,7 +175,10 @@ abstract contract RevertActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: _expectedRollingHash()
+            rollingHash: _expectedRollingHash(),
+            crossChainRollingHash: l2CrossChainRollingHashFold(
+                bytes32(0), L2_ROLLUP_ID, calls[0], true, _successReturnData()
+            )
         });
     }
 }
@@ -327,16 +330,15 @@ contract ExecuteL2 is Script, RevertActions {
         vm.startBroadcast();
         address alice = msg.sender;
 
-        EEZL2(managerAddr)
-            .executeIncomingCrossChainCall(
-                counterL2,
-                0,
-                abi.encodeWithSelector(Counter.increment.selector),
-                alice,
-                MAINNET_ROLLUP_ID,
-                _l2Entries(counterL2, alice),
-                new L2LookupCall[](0)
-            );
+        EEZL2(managerAddr).executeIncomingCrossChainCall(
+            counterL2,
+            0,
+            abi.encodeWithSelector(Counter.increment.selector),
+            alice,
+            MAINNET_ROLLUP_ID,
+            _l2Entries(counterL2, alice),
+            new L2LookupCall[](0)
+        );
 
         uint256 finalCounter = Counter(counterL2).counter();
         require(finalCounter == 0, "revertSpan must roll back successful state changes on L2");

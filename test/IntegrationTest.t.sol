@@ -190,6 +190,28 @@ contract IntegrationTest is Test {
         return keccak256(abi.encode(rollupId, destination, value, data, sourceAddress, sourceRollup));
     }
 
+    function _computeL2CrossChainRollingHash(
+        CrossChainCall[] memory calls,
+        bool[] memory successes,
+        bytes[] memory retDatas
+    )
+        internal
+        pure
+        returns (bytes32 hash)
+    {
+        for (uint256 i = 0; i < calls.length; i++) {
+            bytes32 callHash = _crossChainCallHash(
+                L2_ROLLUP_ID,
+                calls[i].targetAddress,
+                calls[i].value,
+                calls[i].data,
+                calls[i].sourceAddress,
+                calls[i].sourceRollupId
+            );
+            hash = keccak256(abi.encodePacked(hash, callHash, successes[i], retDatas[i]));
+        }
+    }
+
     /// @notice Creates an empty L1 LookupCall array (used by postAndVerifyBatch)
     function _noLookupCalls() internal pure returns (LookupCall[] memory) {
         return new LookupCall[](0);
@@ -198,6 +220,16 @@ contract IntegrationTest is Test {
     /// @notice Creates an empty L2 LookupCall array (used by loadExecutionTable)
     function _noL2LookupCalls() internal pure returns (L2LookupCall[] memory) {
         return new L2LookupCall[](0);
+    }
+
+    function _singleBool(bool value) internal pure returns (bool[] memory values) {
+        values = new bool[](1);
+        values[0] = value;
+    }
+
+    function _singleBytes(bytes memory value) internal pure returns (bytes[] memory values) {
+        values = new bytes[](1);
+        values[0] = value;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -230,7 +262,10 @@ contract IntegrationTest is Test {
         {
             StateDelta[] memory stateDeltas = new StateDelta[](1);
             stateDeltas[0] = StateDelta({
-                rollupId: L2_ROLLUP_ID, currentState: keccak256("l2-initial-state"), newState: newState, etherDelta: 0
+                rollupId: L2_ROLLUP_ID,
+                currentState: keccak256("l2-initial-state"),
+                newState: newState,
+                etherDelta: 0
             });
 
             L2ToL1Call[] memory calls = new L2ToL1Call[](0);
@@ -298,7 +333,8 @@ contract IntegrationTest is Test {
                 expectedLookups: new L2ExpectedLookup[](0),
                 callCount: 0,
                 returnData: abi.encode(uint256(1)),
-                rollingHash: bytes32(0)
+                rollingHash: bytes32(0),
+                crossChainRollingHash: bytes32(0)
             });
 
             vm.prank(SYSTEM_ADDRESS);
@@ -352,7 +388,10 @@ contract IntegrationTest is Test {
         {
             StateDelta[] memory stateDeltas = new StateDelta[](1);
             stateDeltas[0] = StateDelta({
-                rollupId: L2_ROLLUP_ID, currentState: keccak256("l2-initial-state"), newState: newState, etherDelta: 0
+                rollupId: L2_ROLLUP_ID,
+                currentState: keccak256("l2-initial-state"),
+                newState: newState,
+                etherDelta: 0
             });
 
             L2ToL1Call[] memory calls = new L2ToL1Call[](0);
@@ -409,7 +448,8 @@ contract IntegrationTest is Test {
                 expectedLookups: new L2ExpectedLookup[](0),
                 callCount: 1,
                 returnData: "",
-                rollingHash: rollingHash
+                rollingHash: rollingHash,
+                crossChainRollingHash: _computeL2CrossChainRollingHash(calls, _singleBool(true), _singleBytes(""))
             });
 
             vm.prank(SYSTEM_ADDRESS);
@@ -477,7 +517,8 @@ contract IntegrationTest is Test {
                 expectedLookups: new L2ExpectedLookup[](0),
                 callCount: 0,
                 returnData: abi.encode(uint256(1)),
-                rollingHash: bytes32(0)
+                rollingHash: bytes32(0),
+                crossChainRollingHash: bytes32(0)
             });
 
             vm.prank(SYSTEM_ADDRESS);
@@ -502,7 +543,10 @@ contract IntegrationTest is Test {
         {
             StateDelta[] memory stateDeltas = new StateDelta[](1);
             stateDeltas[0] = StateDelta({
-                rollupId: L2_ROLLUP_ID, currentState: keccak256("l2-initial-state"), newState: s1, etherDelta: 0
+                rollupId: L2_ROLLUP_ID,
+                currentState: keccak256("l2-initial-state"),
+                newState: s1,
+                etherDelta: 0
             });
 
             ExpectedL1ToL2Call[] memory nestedActions = new ExpectedL1ToL2Call[](0);

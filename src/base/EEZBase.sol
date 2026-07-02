@@ -54,6 +54,9 @@ abstract contract EEZBase is IEEZ {
     /// @notice Transient rolling hash accumulating tagged events across the entire entry
     bytes32 transient _rollingHash;
 
+    /// @notice Cross-side agreement accumulator, independent from `_rollingHash`.
+    bytes32 transient _crossChainRollingHash;
+
     /// @notice The current execution entry being processed.
     /// @dev L1 uses this to index `_transientExecutions` while a batch is mid-flight, otherwise
     ///      `verificationByRollup[_currentEntryRollupId].executionQueue`. L2 always indexes `executions`.
@@ -115,12 +118,21 @@ abstract contract EEZBase is IEEZ {
     /// @notice Error when the computed rolling hash doesn't match the entry's `rollingHash`
     error RollingHashMismatch();
 
+    /// @notice Error when the computed cross-chain rolling hash doesn't match the stored field
+    error CrossChainRollingHashMismatch();
+
     /// @notice Carries execution results out of a reverted context
     /// @dev Direction-neutral transport. `callNotFound` is the deferred-revert flag forwarded
     ///      from L1's `_consumeNestedAction` no-match path. The EVM rolls back the transient
     ///      write on revert, so it has to ride out in the payload. L2 has no such flag and
     ///      always sends `false`.
-    error ContextResult(bytes32 rollingHash, uint256 reentrantConsumed, uint256 callsProcessed, bool callNotFound);
+    error ContextResult(
+        bytes32 rollingHash,
+        uint256 reentrantConsumed,
+        uint256 callsProcessed,
+        bool callNotFound,
+        bytes32 crossChainRollingHash
+    );
 
     /// @notice Error when `executeInContextAndRevert` reverts with an unexpected error
     error UnexpectedContextRevert(bytes revertData);
@@ -153,12 +165,21 @@ abstract contract EEZBase is IEEZ {
     /// @param originalAddress The address this proxy represents on the source rollup
     /// @param originalRollupId The source rollup ID
     /// @return proxy The deployed proxy address
-    function createCrossChainProxy(address originalAddress, uint256 originalRollupId) external returns (address proxy) {
+    function createCrossChainProxy(
+        address originalAddress,
+        uint256 originalRollupId
+    )
+        external
+        returns (address proxy)
+    {
         return _createCrossChainProxyInternal(originalAddress, originalRollupId);
     }
 
     /// @notice Deploys a CrossChainProxy via CREATE2 and registers it as authorized
-    function _createCrossChainProxyInternal(address originalAddress, uint256 originalRollupId)
+    function _createCrossChainProxyInternal(
+        address originalAddress,
+        uint256 originalRollupId
+    )
         internal
         returns (address proxy)
     {
@@ -173,7 +194,10 @@ abstract contract EEZBase is IEEZ {
     /// @notice Computes the deterministic CREATE2 address for a CrossChainProxy
     /// @param originalAddress The address this proxy represents on the source rollup
     /// @param originalRollupId The source rollup ID
-    function computeCrossChainProxyAddress(address originalAddress, uint256 originalRollupId)
+    function computeCrossChainProxyAddress(
+        address originalAddress,
+        uint256 originalRollupId
+    )
         public
         view
         returns (address)
@@ -228,23 +252,30 @@ abstract contract EEZBase is IEEZ {
     // ──────────────────────────────────────────────
 
     /// @notice Decodes a `ContextResult` revert payload returned by `executeInContextAndRevert`.
-    /// @dev Validates selector AND length (4 + 4*32 = 132) before the raw mloads — defense
+    /// @dev Validates selector AND length (4 + 5*32 = 164) before the raw mloads - defense
     ///      against a truncated revert that happens to share the selector.
     function _decodeContextResult(bytes memory revertData)
         internal
         pure
-        returns (bytes32 rollingHash, uint256 reentrantConsumed, uint256 callsProcessed, bool callNotFound)
+        returns (
+            bytes32 rollingHash,
+            uint256 reentrantConsumed,
+            uint256 callsProcessed,
+            bool callNotFound,
+            bytes32 crossChainRollingHash
+        )
     {
         if (bytes4(revertData) != ContextResult.selector) {
             revert UnexpectedContextRevert(revertData);
         }
-        if (revertData.length < 132) revert UnexpectedContextRevert(revertData);
+        if (revertData.length < 164) revert UnexpectedContextRevert(revertData);
         assembly {
             let ptr := add(revertData, 36)
             rollingHash := mload(ptr)
             reentrantConsumed := mload(add(ptr, 32))
             callsProcessed := mload(add(ptr, 64))
             callNotFound := mload(add(ptr, 96))
+            crossChainRollingHash := mload(add(ptr, 128))
         }
     }
 
@@ -294,11 +325,35 @@ abstract contract EEZBase is IEEZ {
     ///         `_rollingHash` because lookup calls are verified against
     ///         `LookupCall.rollingHash`, a separate per-LookupCall accumulator.
     ///          Is much less constrained since static calls do not have state race conditions
-    function _rollingHashStaticResult(bytes32 prev, bool success, bytes memory retData)
+    function _rollingHashStaticResult(
+        bytes32 prev,
+        bool success,
+        bytes memory retData
+    )
         internal
         pure
         returns (bytes32)
     {
         return keccak256(abi.encodePacked(prev, success, retData));
+    }
+
+    /// @notice Folds a completed boundary call into `_crossChainRollingHash`.
+    function _crossChainRollingHashFold(bytes32 crossChainCallHash, bool success, bytes memory returnData) internal {
+        _crossChainRollingHash =
+            keccak256(abi.encodePacked(_crossChainRollingHash, crossChainCallHash, success, returnData));
+    }
+
+    /// @notice Pure fold for contexts that cannot write transient state.
+    function _crossChainRollingHashStaticFold(
+        bytes32 prev,
+        bytes32 crossChainCallHash,
+        bool success,
+        bytes memory returnData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(prev, crossChainCallHash, success, returnData));
     }
 }

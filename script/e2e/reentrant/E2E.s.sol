@@ -21,7 +21,13 @@ import {
 } from "../../../src/interfaces/IEEZL2.sol";
 import {ReentrantCounter} from "../../../test/mocks/ReentrantCounter.sol";
 import {ComputeExpectedBase} from "../shared/ComputeExpectedBase.sol";
-import {crossChainCallHash, noLookupCalls, RollingHashBuilder} from "../shared/E2EHelpers.sol";
+import {
+    crossChainCallHash,
+    noLookupCalls,
+    l2CrossChainRollingHashFold,
+    crossChainRollingHashFold,
+    RollingHashBuilder
+} from "../shared/E2EHelpers.sol";
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Reentrant — 4-hop cross-chain reentrant chain via deepCall(3)
@@ -147,9 +153,26 @@ abstract contract ReentrantActions {
         h = h.appendCallEnd(2, true, abi.encode(uint256(2)));
     }
 
+    function _l2CrossChainRollingHash(
+        CrossChainCall[] memory calls,
+        ExpectedOutgoingCrossChainCall[] memory nested
+    )
+        internal
+        pure
+        returns (bytes32 h)
+    {
+        h = l2CrossChainRollingHashFold(h, L2_ROLLUP_ID, calls[1], true, abi.encode(uint256(1)));
+        h = crossChainRollingHashFold(h, nested[0].crossChainCallHash, true, nested[0].returnData);
+        h = l2CrossChainRollingHashFold(h, L2_ROLLUP_ID, calls[0], true, abi.encode(uint256(2)));
+    }
+
     // ── Entry builders ──
 
-    function _l1Entries(address rcL1, address rcL2, address batcher)
+    function _l1Entries(
+        address rcL1,
+        address rcL2,
+        address batcher
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -211,7 +234,11 @@ abstract contract ReentrantActions {
         });
     }
 
-    function _l2Entries(address rcL1, address rcL2, address alice)
+    function _l2Entries(
+        address rcL1,
+        address rcL2,
+        address alice
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -238,7 +265,9 @@ abstract contract ReentrantActions {
 
         ExpectedOutgoingCrossChainCall[] memory nested = new ExpectedOutgoingCrossChainCall[](1);
         nested[0] = ExpectedOutgoingCrossChainCall({
-            crossChainCallHash: _l2NestedHash0(rcL1, rcL2), callCount: 1, returnData: abi.encode(uint256(1))
+            crossChainCallHash: _l2NestedHash0(rcL1, rcL2),
+            callCount: 1,
+            returnData: abi.encode(uint256(1))
         });
 
         entries = new L2ExecutionEntry[](1);
@@ -250,7 +279,8 @@ abstract contract ReentrantActions {
             callCount: 1,
             // Top-level rcL2.deepCall(2) returns ++count == 2 after the chain.
             returnData: abi.encode(uint256(2)),
-            rollingHash: _l2RollingHash()
+            rollingHash: _l2RollingHash(),
+            crossChainRollingHash: _l2CrossChainRollingHash(calls, nested)
         });
     }
 }

@@ -94,6 +94,44 @@ contract EEZL2Test is Test {
         return hash;
     }
 
+    function _crossChainRollingHashFold(
+        bytes32 prev,
+        CrossChainCall memory cc,
+        bool success,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        bytes32 callHash =
+            _computeActionHash(TEST_ROLLUP_ID, cc.targetAddress, cc.value, cc.data, cc.sourceAddress, cc.sourceRollupId);
+        return keccak256(abi.encodePacked(prev, callHash, success, retData));
+    }
+
+    function _crossChainRollingHashSingleCall(
+        CrossChainCall memory cc,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        return _crossChainRollingHashFold(bytes32(0), cc, true, retData);
+    }
+
+    function _crossChainRollingHashLookup(
+        bytes32 lookupHash,
+        bool success,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(bytes32(0), lookupHash, success, retData));
+    }
+
     /// @notice Helper to load a single entry into the execution table
     function _loadSingleEntry(ExecutionEntry memory entry) internal {
         ExecutionEntry[] memory entries = new ExecutionEntry[](1);
@@ -122,10 +160,14 @@ contract EEZL2Test is Test {
         entry.callCount = 1;
         entry.returnData = returnData;
         entry.rollingHash = rollingHash;
+        entry.crossChainRollingHash = _crossChainRollingHashSingleCall(cc, "");
     }
 
     /// @notice Helper to build a no-call entry (just crossChainCallHash match, return data)
-    function _buildNoCalls(bytes32 crossChainCallHash, bytes memory returnData)
+    function _buildNoCalls(
+        bytes32 crossChainCallHash,
+        bytes memory returnData
+    )
         internal
         view
         returns (ExecutionEntry memory entry)
@@ -242,7 +284,9 @@ contract EEZL2Test is Test {
         assertEq(origAddr, address(target));
         assertEq(uint256(origRollup), REMOTE_ROLLUP_ID);
         uint256 codeSize;
-        assembly { codeSize := extcodesize(proxy) }
+        assembly {
+            codeSize := extcodesize(proxy)
+        }
         assertTrue(codeSize > 0);
     }
 
@@ -326,6 +370,7 @@ contract EEZL2Test is Test {
         lookups[0].failed = true;
         lookups[0].incomingCalls = new CrossChainCall[](0);
         lookups[0].rollingHash = bytes32(0);
+        lookups[0].crossChainRollingHash = _crossChainRollingHashLookup(h, false, payload);
 
         ExecutionEntry[] memory entries = new ExecutionEntry[](0);
         vm.prank(SYSTEM_ADDRESS);
@@ -386,7 +431,8 @@ contract EEZL2Test is Test {
             incomingCalls: new CrossChainCall[](0),
             expectedOutgoingCalls: new ExpectedOutgoingCrossChainCall[](0),
             callCount: 0,
-            rollingHash: bytes32(0)
+            rollingHash: bytes32(0),
+            crossChainRollingHash: _crossChainRollingHashLookup(innerHash, false, bytes("inner reverts"))
         });
         entry.expectedLookups = lookups;
         _loadSingleEntry(entry);
@@ -449,6 +495,7 @@ contract EEZL2Test is Test {
         bytes memory entryReturnData = abi.encode(uint256(999));
 
         ExecutionEntry memory entry = _buildSimpleEntry(crossChainCallHash, cc, entryReturnData, rollingHash);
+        entry.crossChainRollingHash = _crossChainRollingHashSingleCall(cc, retData);
         _loadSingleEntry(entry);
 
         (bool success, bytes memory ret) = proxy.call(callData);
@@ -485,6 +532,8 @@ contract EEZL2Test is Test {
         ExecutionEntry[] memory entries = new ExecutionEntry[](2);
         entries[0] = _buildSimpleEntry(crossChainCallHash, cc, abi.encode(uint256(111)), rollingHash);
         entries[1] = _buildSimpleEntry(crossChainCallHash, cc, abi.encode(uint256(222)), rollingHash);
+        entries[0].crossChainRollingHash = _crossChainRollingHashSingleCall(cc, retData);
+        entries[1].crossChainRollingHash = _crossChainRollingHashSingleCall(cc, retData);
         LookupCall[] memory noStatic = new LookupCall[](0);
         vm.prank(SYSTEM_ADDRESS);
         manager.loadExecutionTable(entries, noStatic);
@@ -576,6 +625,7 @@ contract EEZL2Test is Test {
         entry.callCount = 1;
         entry.returnData = "";
         entry.rollingHash = rollingHash;
+        entry.crossChainRollingHash = _crossChainRollingHashFold(bytes32(0), calls[0], true, "");
 
         _loadSingleEntry(entry);
 
@@ -628,6 +678,8 @@ contract EEZL2Test is Test {
         entry.callCount = 2;
         entry.returnData = "";
         entry.rollingHash = hash;
+        bytes32 crossChainHash = _crossChainRollingHashFold(bytes32(0), calls[0], true, "");
+        entry.crossChainRollingHash = _crossChainRollingHashFold(crossChainHash, calls[1], true, "");
 
         _loadSingleEntry(entry);
 
@@ -676,6 +728,7 @@ contract EEZL2Test is Test {
         entry.callCount = 1;
         entry.returnData = "";
         entry.rollingHash = hash;
+        entry.crossChainRollingHash = _crossChainRollingHashFold(bytes32(0), calls[0], false, revertData);
 
         _loadSingleEntry(entry);
 

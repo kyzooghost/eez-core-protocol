@@ -28,6 +28,8 @@ import {
     noLookupCalls,
     noL2LookupCalls,
     getOrCreateProxy,
+    l2CrossChainRollingHashFold,
+    crossChainRollingHashFold,
     RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
@@ -136,7 +138,23 @@ abstract contract NestedActions {
         h = h.appendCallEnd(1, true, "");
     }
 
-    function _l1Entries(address counterL2, address cap, address alice)
+    function _expectedCrossChainRollingHash(
+        CrossChainCall memory call,
+        ExpectedOutgoingCrossChainCall memory nested
+    )
+        internal
+        pure
+        returns (bytes32 h)
+    {
+        h = crossChainRollingHashFold(h, nested.crossChainCallHash, true, nested.returnData);
+        h = l2CrossChainRollingHashFold(h, L2_ROLLUP_ID, call, true, "");
+    }
+
+    function _l1Entries(
+        address counterL2,
+        address cap,
+        address alice
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -184,7 +202,11 @@ abstract contract NestedActions {
 
     // L2 mirror entry.  The outer call is the inbound call delivered by
     // executeIncomingCrossChainCall through the source proxy (alice on MAINNET, on L2).
-    function _l2Entries(address counterL1, address capL2, address alice)
+    function _l2Entries(
+        address counterL1,
+        address capL2,
+        address alice
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -202,7 +224,9 @@ abstract contract NestedActions {
 
         ExpectedOutgoingCrossChainCall[] memory nested = new ExpectedOutgoingCrossChainCall[](1);
         nested[0] = ExpectedOutgoingCrossChainCall({
-            crossChainCallHash: _l2InnerHash(counterL1, capL2), callCount: 0, returnData: abi.encode(uint256(1))
+            crossChainCallHash: _l2InnerHash(counterL1, capL2),
+            callCount: 0,
+            returnData: abi.encode(uint256(1))
         });
 
         entries = new L2ExecutionEntry[](1);
@@ -213,7 +237,8 @@ abstract contract NestedActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: _expectedRollingHash()
+            rollingHash: _expectedRollingHash(),
+            crossChainRollingHash: _expectedCrossChainRollingHash(calls[0], nested[0])
         });
     }
 }
@@ -354,16 +379,15 @@ contract ExecuteL2 is Script, NestedActions {
         address alice = msg.sender; // SYSTEM_ADDRESS is the broadcaster; it stands in for "alice on MAINNET"
         console.log("ExecuteL2: alice=%s capL2=%s counterL1=%s", alice, capL2Addr, counterL1Addr);
 
-        EEZL2(managerAddr)
-            .executeIncomingCrossChainCall(
-                capL2Addr,
-                0,
-                abi.encodeWithSelector(CounterAndProxy.incrementProxy.selector),
-                alice,
-                MAINNET_ROLLUP_ID,
-                _l2Entries(counterL1Addr, capL2Addr, alice),
-                noL2LookupCalls()
-            );
+        EEZL2(managerAddr).executeIncomingCrossChainCall(
+            capL2Addr,
+            0,
+            abi.encodeWithSelector(CounterAndProxy.incrementProxy.selector),
+            alice,
+            MAINNET_ROLLUP_ID,
+            _l2Entries(counterL1Addr, capL2Addr, alice),
+            noL2LookupCalls()
+        );
 
         console.log("done");
         console.log("capL2.counter=%s", CounterAndProxy(capL2Addr).counter());

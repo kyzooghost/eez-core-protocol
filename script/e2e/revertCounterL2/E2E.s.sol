@@ -22,11 +22,7 @@ import {
 import {Counter} from "../../../test/mocks/CounterContracts.sol";
 import {ComputeExpectedBase} from "../shared/ComputeExpectedBase.sol";
 import {
-    crossChainCallHash,
-    noLookupCalls,
-    noNestedActions,
-    noCalls,
-    RollingHashBuilder
+    crossChainCallHash, noLookupCalls, noNestedActions, noCalls, l2CrossChainRollingHashFold, RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -88,7 +84,11 @@ abstract contract RevertL2Actions {
         h = h.appendCallEnd(1, true, _successReturnData());
     }
 
-    function _l2Entries(address counterL2, address counterL1, address alice)
+    function _l2Entries(
+        address counterL2,
+        address counterL1,
+        address alice
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -116,7 +116,10 @@ abstract contract RevertL2Actions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: _expectedRollingHash()
+            rollingHash: _expectedRollingHash(),
+            crossChainRollingHash: l2CrossChainRollingHashFold(
+                bytes32(0), L2_ROLLUP_ID, calls[0], true, _successReturnData()
+            )
         });
     }
 
@@ -124,7 +127,11 @@ abstract contract RevertL2Actions {
     /// `l2ToL1Calls[0]` targets the real Counter on L1 with revertSpan=1; the inner
     /// span increments it, returns abi.encode(1), and executeInContext rolls back state.
     /// Source matches the L2-anchored entry: (alice, L2_ROLLUP_ID).
-    function _l1Entries(address counterL1, address counterL2, address alice)
+    function _l1Entries(
+        address counterL1,
+        address counterL2,
+        address alice
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)

@@ -15,11 +15,7 @@ import {
 import {Counter, CounterAndProxy} from "../../../test/mocks/CounterContracts.sol";
 import {ComputeExpectedBase} from "../shared/ComputeExpectedBase.sol";
 import {
-    crossChainCallHash,
-    noLookupCalls,
-    noNestedActions,
-    noCalls,
-    RollingHashBuilder
+    crossChainCallHash, noLookupCalls, noNestedActions, noCalls, l2CrossChainRollingHashFold, RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -59,7 +55,10 @@ abstract contract CounterActions {
     }
 
     /// @dev Single L1 entry — matches Scenario 1 of IntegrationTest.t.sol.
-    function _l1Entries(address counterL2, address counterAndProxy)
+    function _l1Entries(
+        address counterL2,
+        address counterAndProxy
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -89,7 +88,10 @@ abstract contract CounterActions {
     /// @dev Single L2 entry — L2-side mirror that drives the actual Counter.increment() on L2.
     /// `calls[0]` is the inbound call delivered through the source proxy
     /// (lazily created by `_processNCalls`). Same `proxyEntryHash` as the L1 entry.
-    function _l2Entries(address counterL2, address counterAndProxy)
+    function _l2Entries(
+        address counterL2,
+        address counterAndProxy
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -117,7 +119,10 @@ abstract contract CounterActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: abi.encode(uint256(1)),
-            rollingHash: rh
+            rollingHash: rh,
+            crossChainRollingHash: l2CrossChainRollingHashFold(
+                bytes32(0), L2_ROLLUP_ID, calls[0], true, abi.encode(uint256(1))
+            )
         });
     }
 }
@@ -222,16 +227,15 @@ contract ExecuteL2 is Script, CounterActions {
         address capAddr = vm.envAddress("COUNTER_AND_PROXY");
 
         vm.startBroadcast();
-        EEZL2(managerAddr)
-            .executeIncomingCrossChainCall(
-                counterL2Addr,
-                0,
-                _incrementCallData(),
-                capAddr,
-                MAINNET_ROLLUP_ID,
-                _l2Entries(counterL2Addr, capAddr),
-                new L2LookupCall[](0)
-            );
+        EEZL2(managerAddr).executeIncomingCrossChainCall(
+            counterL2Addr,
+            0,
+            _incrementCallData(),
+            capAddr,
+            MAINNET_ROLLUP_ID,
+            _l2Entries(counterL2Addr, capAddr),
+            new L2LookupCall[](0)
+        );
 
         console.log("done");
         console.log("L2 counter=%s", Counter(counterL2Addr).counter());

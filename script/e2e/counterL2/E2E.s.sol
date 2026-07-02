@@ -47,7 +47,10 @@ abstract contract CounterL2Actions {
         return crossChainCallHash(MAINNET_ROLLUP_ID, counterL1, 0, _incrementCallData(), capL2, L2_ROLLUP_ID);
     }
 
-    function _l2Entries(address counterL1, address counterAndProxyL2)
+    function _l2Entries(
+        address counterL1,
+        address counterAndProxyL2
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -60,14 +63,18 @@ abstract contract CounterL2Actions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 0,
             returnData: abi.encode(uint256(1)),
-            rollingHash: bytes32(0)
+            rollingHash: bytes32(0),
+            crossChainRollingHash: bytes32(0)
         });
     }
 
     /// @dev Single L1 entry — L2-TX style, system-driven (proxyEntryHash=0).
     /// `l2ToL1Calls[0]` is the inbound call delivered through the source proxy
     /// for CAP-on-L2 (lazily created by `_processNCalls`).
-    function _l1Entries(address counterL1, address counterAndProxyL2)
+    function _l1Entries(
+        address counterL1,
+        address counterAndProxyL2
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
