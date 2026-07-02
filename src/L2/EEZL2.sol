@@ -231,6 +231,10 @@ contract EEZL2 is EEZBase {
     ///      folds tagged events into the rolling hash, and handles `revertSpan`. Reentrant
     ///      cross-chain calls during execution see `_insideExecution() == true` and consume
     ///      from `executions[0].expectedOutgoingCalls`.
+    ///      Unlike `_consumeAndExecute`, this path does not add a final top-level
+    ///      cross-chain rolling-hash fold after `_processNCalls`: the inbound call itself is
+    ///      represented by `incomingCalls[0]`, so `_processNCalls` already folds it. Folding
+    ///      `crossChainCallHash` here would double count the same boundary call.
     /// @param destination The L2 destination address (target of the inbound call)
     /// @param value The ETH value forwarded to the destination
     /// @param data The calldata for the destination
@@ -279,8 +283,8 @@ contract EEZL2 is EEZBase {
         // 4. Bind the emitted call hash to the entry (mirrors L1 `_consumeAndExecute`).
         if (entry.proxyEntryHash != crossChainCallHash) revert EntryHashMismatch();
 
-        // 5. Drive the flat call processor — `entry.incomingCalls[0]` is the inbound call,
-        //    delivered via the source proxy by `_processNCalls`
+        // 5. Drive the flat call processor. `entry.incomingCalls[0]` is the inbound call,
+        //    delivered and cross-chain-hash-folded via the source proxy by `_processNCalls`.
         _crossChainRollingHash = bytes32(0);
         _processNCalls(entry.callCount);
 
