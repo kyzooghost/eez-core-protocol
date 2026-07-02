@@ -120,6 +120,19 @@ contract EEZL2Test is Test {
         return _crossChainRollingHashFold(bytes32(0), cc, true, retData);
     }
 
+    function _crossChainRollingHashFoldHash(
+        bytes32 prev,
+        bytes32 callHash,
+        bool success,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(prev, callHash, success, retData));
+    }
+
     function _crossChainRollingHashLookup(
         bytes32 lookupHash,
         bool success,
@@ -160,7 +173,9 @@ contract EEZL2Test is Test {
         entry.callCount = 1;
         entry.returnData = returnData;
         entry.rollingHash = rollingHash;
-        entry.crossChainRollingHash = _crossChainRollingHashSingleCall(cc, "");
+        entry.crossChainRollingHash = _crossChainRollingHashFoldHash(
+            _crossChainRollingHashSingleCall(cc, ""), crossChainCallHash, true, returnData
+        );
     }
 
     /// @notice Helper to build a no-call entry (just crossChainCallHash match, return data)
@@ -178,6 +193,7 @@ contract EEZL2Test is Test {
         entry.callCount = 0;
         entry.returnData = returnData;
         entry.rollingHash = bytes32(0);
+        entry.crossChainRollingHash = _crossChainRollingHashFoldHash(bytes32(0), crossChainCallHash, true, returnData);
     }
 
     // ── Constructor ──
@@ -265,6 +281,25 @@ contract EEZL2Test is Test {
         emit EEZL2.EntryExecuted(0, rollingHash, entry.crossChainRollingHash, 1, 0);
         (bool success,) = proxy.call(callData);
         assertTrue(success);
+    }
+
+    function test_ExecuteCrossChainCall_FoldsTopLevelProxyCallCompletion() public {
+        // Arrange
+        bytes memory callData = abi.encodeCall(L2TestTarget.setValue, (42));
+        bytes memory returnData = abi.encode(uint256(123));
+        bytes32 crossChainCallHash =
+            _computeActionHash(REMOTE_ROLLUP_ID, address(target), 0, callData, address(this), TEST_ROLLUP_ID);
+        address proxy = manager.createCrossChainProxy(address(target), REMOTE_ROLLUP_ID);
+
+        ExecutionEntry memory entry = _buildNoCalls(crossChainCallHash, returnData);
+        _loadSingleEntry(entry);
+
+        // Act
+        (bool success, bytes memory result) = proxy.call(callData);
+
+        // Assert
+        assertTrue(success);
+        assertEq(result, returnData);
     }
 
     function test_LoadExecutionTable_MultipleEntries() public {
@@ -523,7 +558,9 @@ contract EEZL2Test is Test {
         bytes memory entryReturnData = abi.encode(uint256(999));
 
         ExecutionEntry memory entry = _buildSimpleEntry(crossChainCallHash, cc, entryReturnData, rollingHash);
-        entry.crossChainRollingHash = _crossChainRollingHashSingleCall(cc, retData);
+        entry.crossChainRollingHash = _crossChainRollingHashFoldHash(
+            _crossChainRollingHashSingleCall(cc, retData), crossChainCallHash, true, entryReturnData
+        );
         _loadSingleEntry(entry);
 
         (bool success, bytes memory ret) = proxy.call(callData);
@@ -560,8 +597,12 @@ contract EEZL2Test is Test {
         ExecutionEntry[] memory entries = new ExecutionEntry[](2);
         entries[0] = _buildSimpleEntry(crossChainCallHash, cc, abi.encode(uint256(111)), rollingHash);
         entries[1] = _buildSimpleEntry(crossChainCallHash, cc, abi.encode(uint256(222)), rollingHash);
-        entries[0].crossChainRollingHash = _crossChainRollingHashSingleCall(cc, retData);
-        entries[1].crossChainRollingHash = _crossChainRollingHashSingleCall(cc, retData);
+        entries[0].crossChainRollingHash = _crossChainRollingHashFoldHash(
+            _crossChainRollingHashSingleCall(cc, retData), crossChainCallHash, true, abi.encode(uint256(111))
+        );
+        entries[1].crossChainRollingHash = _crossChainRollingHashFoldHash(
+            _crossChainRollingHashSingleCall(cc, retData), crossChainCallHash, true, abi.encode(uint256(222))
+        );
         LookupCall[] memory noStatic = new LookupCall[](0);
         vm.prank(SYSTEM_ADDRESS);
         manager.loadExecutionTable(entries, noStatic);
@@ -653,7 +694,9 @@ contract EEZL2Test is Test {
         entry.callCount = 1;
         entry.returnData = "";
         entry.rollingHash = rollingHash;
-        entry.crossChainRollingHash = _crossChainRollingHashFold(bytes32(0), calls[0], true, "");
+        entry.crossChainRollingHash = _crossChainRollingHashFoldHash(
+            _crossChainRollingHashFold(bytes32(0), calls[0], true, ""), crossChainCallHash, true, ""
+        );
 
         _loadSingleEntry(entry);
 
@@ -707,7 +750,8 @@ contract EEZL2Test is Test {
         entry.returnData = "";
         entry.rollingHash = hash;
         bytes32 crossChainHash = _crossChainRollingHashFold(bytes32(0), calls[0], true, "");
-        entry.crossChainRollingHash = _crossChainRollingHashFold(crossChainHash, calls[1], true, "");
+        crossChainHash = _crossChainRollingHashFold(crossChainHash, calls[1], true, "");
+        entry.crossChainRollingHash = _crossChainRollingHashFoldHash(crossChainHash, crossChainCallHash, true, "");
 
         _loadSingleEntry(entry);
 
@@ -756,7 +800,9 @@ contract EEZL2Test is Test {
         entry.callCount = 1;
         entry.returnData = "";
         entry.rollingHash = hash;
-        entry.crossChainRollingHash = _crossChainRollingHashFold(bytes32(0), calls[0], false, revertData);
+        entry.crossChainRollingHash = _crossChainRollingHashFoldHash(
+            _crossChainRollingHashFold(bytes32(0), calls[0], false, revertData), crossChainCallHash, true, ""
+        );
 
         _loadSingleEntry(entry);
 

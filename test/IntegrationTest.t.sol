@@ -212,6 +212,19 @@ contract IntegrationTest is Test {
         }
     }
 
+    function _foldCrossChainRollingHash(
+        bytes32 hash,
+        bytes32 callHash,
+        bool success,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(hash, callHash, success, retData));
+    }
+
     /// @notice Creates an empty L1 LookupCall array (used by postAndVerifyBatch)
     function _noLookupCalls() internal pure returns (LookupCall[] memory) {
         return new LookupCall[](0);
@@ -334,7 +347,9 @@ contract IntegrationTest is Test {
                 callCount: 0,
                 returnData: abi.encode(uint256(1)),
                 rollingHash: bytes32(0),
-                crossChainRollingHash: bytes32(0)
+                crossChainRollingHash: _foldCrossChainRollingHash(
+                    bytes32(0), crossChainCallHash, true, abi.encode(uint256(1))
+                )
             });
 
             vm.prank(SYSTEM_ADDRESS);
@@ -449,7 +464,9 @@ contract IntegrationTest is Test {
                 callCount: 1,
                 returnData: "",
                 rollingHash: rollingHash,
-                crossChainRollingHash: _computeL2CrossChainRollingHash(calls, _singleBool(true), _singleBytes(""))
+                crossChainRollingHash: _foldCrossChainRollingHash(
+                    _computeL2CrossChainRollingHash(calls, _singleBool(true), _singleBytes("")), l2ActionHash, true, ""
+                )
             });
 
             vm.prank(SYSTEM_ADDRESS);
@@ -518,7 +535,7 @@ contract IntegrationTest is Test {
                 callCount: 0,
                 returnData: abi.encode(uint256(1)),
                 rollingHash: bytes32(0),
-                crossChainRollingHash: bytes32(0)
+                crossChainRollingHash: _foldCrossChainRollingHash(bytes32(0), l2ActionHash, true, abi.encode(uint256(1)))
             });
 
             vm.prank(SYSTEM_ADDRESS);

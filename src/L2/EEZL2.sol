@@ -437,6 +437,7 @@ contract EEZL2 is EEZBase {
         _lastOutgoingCallConsumed = 0;
 
         _processNCalls(entry.callCount);
+        _crossChainRollingHashFold(crossChainCallHash, true, entry.returnData);
 
         if (_rollingHash != entry.rollingHash) revert RollingHashMismatch();
         if (_crossChainRollingHash != entry.crossChainRollingHash) revert CrossChainRollingHashMismatch();

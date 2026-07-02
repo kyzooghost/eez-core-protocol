@@ -199,6 +199,19 @@ contract IntegrationTestFlashLoan is Test {
         }
     }
 
+    function _foldCrossChainRollingHash(
+        bytes32 hash,
+        bytes32 callHash,
+        bool success,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(hash, callHash, success, retData));
+    }
+
     /// @dev Helper to create an empty LookupCall array
     /// @dev Wraps a single sub-batch to L2 and posts it.
     function _postBatchToL2(ExecutionEntry[] memory entries, uint256 transientCount) internal {
@@ -348,7 +361,9 @@ contract IntegrationTestFlashLoan is Test {
             successes[0] = true;
             bytes[] memory retDatas = new bytes[](1);
             retDatas[0] = "";
-            entries[0].crossChainRollingHash = _computeL2CrossChainRollingHash(phase1L2Calls, successes, retDatas);
+            entries[0].crossChainRollingHash = _foldCrossChainRollingHash(
+                _computeL2CrossChainRollingHash(phase1L2Calls, successes, retDatas), phase1L2TriggerHash, true, ""
+            );
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(entries, _noL2LookupCalls());
@@ -517,7 +532,7 @@ contract IntegrationTestFlashLoan is Test {
         {
             L2ExecutionEntry[] memory l2Entries = new L2ExecutionEntry[](1);
             l2Entries[0].proxyEntryHash = l2Entry0ActionHash;
-            // No calls, returnData = "", rollingHash = 0
+            l2Entries[0].crossChainRollingHash = _foldCrossChainRollingHash(bytes32(0), l2Entry0ActionHash, true, "");
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(l2Entries, _noL2LookupCalls());

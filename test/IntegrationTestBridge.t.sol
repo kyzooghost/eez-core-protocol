@@ -200,6 +200,19 @@ contract IntegrationTestBridge is Test {
         }
     }
 
+    function _foldCrossChainRollingHash(
+        bytes32 hash,
+        bytes32 callHash,
+        bool success,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(hash, callHash, success, retData));
+    }
+
     /// @dev Helper to create an empty L1 LookupCall array
     function _noLookupCalls() internal pure returns (LookupCall[] memory) {
         return new LookupCall[](0);
@@ -349,7 +362,9 @@ contract IntegrationTestBridge is Test {
             entries[0].callCount = 1;
             entries[0].returnData = "";
             entries[0].rollingHash = l2RollingHash;
-            entries[0].crossChainRollingHash = _computeL2CrossChainRollingHash(l2Calls, successes, retDatas);
+            entries[0].crossChainRollingHash = _foldCrossChainRollingHash(
+                _computeL2CrossChainRollingHash(l2Calls, successes, retDatas), l2TriggerHash, true, ""
+            );
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(entries, _noL2LookupCalls());
@@ -477,7 +492,9 @@ contract IntegrationTestBridge is Test {
             entries[0].callCount = 1;
             entries[0].returnData = "";
             entries[0].rollingHash = l2RollingHash;
-            entries[0].crossChainRollingHash = _computeL2CrossChainRollingHash(l2Calls, successes, retDatas);
+            entries[0].crossChainRollingHash = _foldCrossChainRollingHash(
+                _computeL2CrossChainRollingHash(l2Calls, successes, retDatas), l2TriggerHash, true, ""
+            );
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(entries, _noL2LookupCalls());
@@ -596,7 +613,9 @@ contract IntegrationTestBridge is Test {
             entries[0].callCount = 1;
             entries[0].returnData = "";
             entries[0].rollingHash = fwdL2RollingHash;
-            entries[0].crossChainRollingHash = _computeL2CrossChainRollingHash(fwdL2Calls, fwdSuccesses, fwdRetDatas);
+            entries[0].crossChainRollingHash = _foldCrossChainRollingHash(
+                _computeL2CrossChainRollingHash(fwdL2Calls, fwdSuccesses, fwdRetDatas), l2FwdTriggerHash, true, ""
+            );
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(entries, _noL2LookupCalls());
@@ -635,7 +654,7 @@ contract IntegrationTestBridge is Test {
         {
             L2ExecutionEntry[] memory entries = new L2ExecutionEntry[](1);
             entries[0].proxyEntryHash = retActionHash;
-            // No calls (simple resolution), no rolling hash needed
+            entries[0].crossChainRollingHash = _foldCrossChainRollingHash(bytes32(0), retActionHash, true, "");
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(entries, _noL2LookupCalls());
