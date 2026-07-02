@@ -15,11 +15,7 @@ import {
 import {HelloWorldL1, HelloWorldL2, IHelloWorldL2} from "../../../test/mocks/helloword.sol";
 import {ComputeExpectedBase} from "../shared/ComputeExpectedBase.sol";
 import {
-    crossChainCallHash,
-    noLookupCalls,
-    noNestedActions,
-    noCalls,
-    RollingHashBuilder
+    crossChainCallHash, noLookupCalls, noNestedActions, noCalls, l2CrossChainRollingHashFold, RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -95,7 +91,10 @@ abstract contract HelloActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: abi.encode("World"),
-            rollingHash: rh
+            rollingHash: rh,
+            crossChainRollingHash: l2CrossChainRollingHashFold(
+                bytes32(0), L2_ROLLUP_ID, calls[0], true, abi.encode("World")
+            )
         });
     }
 }
@@ -184,16 +183,15 @@ contract ExecuteL2 is Script, HelloActions {
         address helloL1Addr = vm.envAddress("HELLO_WORLD_L1");
 
         vm.startBroadcast();
-        bytes memory ret = EEZL2(managerAddr)
-            .executeIncomingCrossChainCall(
-                helloL2Addr,
-                0,
-                _getWordCallData(),
-                helloL1Addr,
-                MAINNET_ROLLUP_ID,
-                _l2Entries(helloL2Addr, helloL1Addr),
-                new L2LookupCall[](0)
-            );
+        bytes memory ret = EEZL2(managerAddr).executeIncomingCrossChainCall(
+            helloL2Addr,
+            0,
+            _getWordCallData(),
+            helloL1Addr,
+            MAINNET_ROLLUP_ID,
+            _l2Entries(helloL2Addr, helloL1Addr),
+            new L2LookupCall[](0)
+        );
 
         console.log("done");
         console.log("L2 ret length=%s", ret.length);

@@ -14,11 +14,7 @@ import {
 } from "../../../src/interfaces/IEEZL2.sol";
 import {ComputeExpectedBase} from "../shared/ComputeExpectedBase.sol";
 import {
-    crossChainCallHash,
-    noLookupCalls,
-    noNestedActions,
-    noCalls,
-    RollingHashBuilder
+    crossChainCallHash, noLookupCalls, noNestedActions, noCalls, l2CrossChainRollingHashFold, RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -64,7 +60,14 @@ abstract contract BridgeActions {
         return crossChainCallHash(L2_ROLLUP_ID, l2Destination, 1 ether, "", sender, MAINNET_ROLLUP_ID);
     }
 
-    function _l1Entries(address l2Destination, address sender) internal pure returns (ExecutionEntry[] memory entries) {
+    function _l1Entries(
+        address l2Destination,
+        address sender
+    )
+        internal
+        pure
+        returns (ExecutionEntry[] memory entries)
+    {
         StateDelta[] memory deltas = new StateDelta[](1);
         deltas[0] = StateDelta({
             rollupId: L2_ROLLUP_ID,
@@ -87,7 +90,10 @@ abstract contract BridgeActions {
         });
     }
 
-    function _l2Entries(address l2Destination, address sender)
+    function _l2Entries(
+        address l2Destination,
+        address sender
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -115,7 +121,8 @@ abstract contract BridgeActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: rh
+            rollingHash: rh,
+            crossChainRollingHash: l2CrossChainRollingHashFold(bytes32(0), L2_ROLLUP_ID, calls[0], true, "")
         });
     }
 }
@@ -211,10 +218,7 @@ contract ExecuteL2 is Script, BridgeActions {
         address senderAddr = vm.envAddress("BRIDGE_SENDER");
 
         vm.startBroadcast();
-        EEZL2(managerAddr)
-        .executeIncomingCrossChainCall{
-            value: 1 ether
-        }(
+        EEZL2(managerAddr).executeIncomingCrossChainCall{value: 1 ether}(
             l2DestAddr,
             1 ether,
             "",
@@ -240,9 +244,7 @@ contract Execute is Script, BridgeActions {
 
         vm.startBroadcast();
         Batcher batcher = new Batcher();
-        batcher.execute{
-            value: 1 ether
-        }(
+        batcher.execute{value: 1 ether}(
             EEZ(rollupsAddr),
             proofSystemAddr,
             _l1Entries(l2DestAddr, senderAddr),

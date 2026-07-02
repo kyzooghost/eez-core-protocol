@@ -131,7 +131,8 @@ contract ExecuteFlashLoanL2 is Script {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 0,
             returnData: "",
-            rollingHash: bytes32(0)
+            rollingHash: bytes32(0),
+            crossChainRollingHash: bytes32(0)
         });
 
         l2Entries[1] = L2ExecutionEntry({
@@ -141,7 +142,8 @@ contract ExecuteFlashLoanL2 is Script {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 0,
             returnData: "",
-            rollingHash: bytes32(0)
+            rollingHash: bytes32(0),
+            crossChainRollingHash: bytes32(0)
         });
 
         l2Entries[2] = L2ExecutionEntry({
@@ -151,7 +153,8 @@ contract ExecuteFlashLoanL2 is Script {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 0,
             returnData: "",
-            rollingHash: bytes32(0)
+            rollingHash: bytes32(0),
+            crossChainRollingHash: bytes32(0)
         });
 
         manager.loadExecutionTable(l2Entries, noLookupCalls);
@@ -300,7 +303,10 @@ contract ExecuteFlashLoanL1 is Script {
         // 3 deferred entries
         StateDelta[] memory deltas1 = new StateDelta[](1);
         deltas1[0] = StateDelta({
-            rollupId: L2_ROLLUP_ID, currentState: keccak256("l2-initial-state"), newState: s1, etherDelta: 0
+            rollupId: L2_ROLLUP_ID,
+            currentState: keccak256("l2-initial-state"),
+            newState: s1,
+            etherDelta: 0
         });
 
         StateDelta[] memory deltas2 = new StateDelta[](1);
@@ -331,7 +337,10 @@ contract ExecuteFlashLoanL1 is Script {
         // This entry has an expectedL1ToL2Call for the bridge return call (reentrant)
         ExpectedL1ToL2Call[] memory nested1 = new ExpectedL1ToL2Call[](1);
         nested1[0] = ExpectedL1ToL2Call({
-            crossChainCallHash: callReturnHash, destinationRollupId: MAINNET_ROLLUP_ID, callCount: 0, returnData: ""
+            crossChainCallHash: callReturnHash,
+            destinationRollupId: MAINNET_ROLLUP_ID,
+            callCount: 0,
+            returnData: ""
         });
 
         entries[1] = ExecutionEntry({

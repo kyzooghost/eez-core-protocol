@@ -86,6 +86,7 @@ struct ExpectedLookup {
     uint256 callCount;
     /// Expected hash of the executed sub-calls: untagged schema (static), tagged (reverted).
     bytes32 rollingHash;
+    bytes32 crossChainRollingHash;
 }
 
 /// @notice Represents an execution entry with pre-computed calls and return hash verification
@@ -140,6 +141,7 @@ struct ExecutionEntry {
     uint256 callCount;
     bytes returnData;
     bytes32 rollingHash;
+    bytes32 crossChainRollingHash;
 }
 
 /// @notice TOP-LEVEL lookup: the pre-computed result of a top-level cross-chain call that is
@@ -175,4 +177,5 @@ struct LookupCall {
     /// `incomingCalls[]` must carry `rollingHash == 0`). Untagged schema in static mode
     /// (`_processNStaticCalls`); tagged entry schema in reverted mode.
     bytes32 rollingHash;
+    bytes32 crossChainRollingHash;
 }

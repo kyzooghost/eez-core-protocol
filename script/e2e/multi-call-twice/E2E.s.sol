@@ -16,11 +16,7 @@ import {Counter} from "../../../test/mocks/CounterContracts.sol";
 import {CallTwice} from "../../../test/mocks/MultiCallContracts.sol";
 import {ComputeExpectedBase} from "../shared/ComputeExpectedBase.sol";
 import {
-    crossChainCallHash,
-    noLookupCalls,
-    noNestedActions,
-    noCalls,
-    RollingHashBuilder
+    crossChainCallHash, noLookupCalls, noNestedActions, noCalls, l2CrossChainRollingHashFold, RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -113,7 +109,10 @@ abstract contract MultiCallActions {
     /// a single CrossChainCall invoking Counter.increment() on counterL2 from
     /// `caller` (CallTwice on L1). Same proxyEntryHash as the L1 entries.
     /// returnData and rolling-hash CALL_END payload differ per entry (1 vs 2).
-    function _l2Entries(address counterL2, address callTwiceL2)
+    function _l2Entries(
+        address counterL2,
+        address callTwiceL2
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -129,7 +128,12 @@ abstract contract MultiCallActions {
         entries[1] = _buildL2Entry(counterL2, callTwiceL2, ah, abi.encode(uint256(2)));
     }
 
-    function _buildL2Entry(address counterL2, address callTwiceL2, bytes32 ah, bytes memory retData)
+    function _buildL2Entry(
+        address counterL2,
+        address callTwiceL2,
+        bytes32 ah,
+        bytes memory retData
+    )
         private
         pure
         returns (L2ExecutionEntry memory)
@@ -156,7 +160,8 @@ abstract contract MultiCallActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: retData,
-            rollingHash: rh
+            rollingHash: rh,
+            crossChainRollingHash: l2CrossChainRollingHashFold(bytes32(0), L2_ROLLUP_ID, calls[0], true, retData)
         });
     }
 }

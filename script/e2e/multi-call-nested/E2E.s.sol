@@ -31,6 +31,8 @@ import {
     noNestedActions,
     noCalls,
     getOrCreateProxy,
+    l2CrossChainRollingHashFold,
+    crossChainRollingHashFold,
     RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
@@ -168,9 +170,26 @@ abstract contract MCNActions {
         h = h.appendCallEnd(1, true, abi.encode(uint256(1)));
     }
 
+    function _l2NestedCrossChainHash(
+        CrossChainCall memory call,
+        ExpectedOutgoingCrossChainCall memory nested
+    )
+        internal
+        pure
+        returns (bytes32 h)
+    {
+        h = crossChainRollingHashFold(h, nested.crossChainCallHash, true, nested.returnData);
+        h = l2CrossChainRollingHashFold(h, L2_ROLLUP_ID, call, true, "");
+    }
+
     // ── L1 entries (3) ──
 
-    function _l1Entries(address counterL1, address cap2L2, address counterL2, address app)
+    function _l1Entries(
+        address counterL1,
+        address cap2L2,
+        address counterL2,
+        address app
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -254,7 +273,12 @@ abstract contract MCNActions {
 
     // ── L2 entries (3) ──
 
-    function _l2Entries(address counterL1, address cap2L2, address counterL2, address l2App)
+    function _l2Entries(
+        address counterL1,
+        address cap2L2,
+        address counterL2,
+        address l2App
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -297,11 +321,15 @@ abstract contract MCNActions {
 
         ExpectedOutgoingCrossChainCall[] memory nested0 = new ExpectedOutgoingCrossChainCall[](1);
         nested0[0] = ExpectedOutgoingCrossChainCall({
-            crossChainCallHash: innerCounterL1, callCount: 0, returnData: abi.encode(uint256(1))
+            crossChainCallHash: innerCounterL1,
+            callCount: 0,
+            returnData: abi.encode(uint256(1))
         });
         ExpectedOutgoingCrossChainCall[] memory nested1 = new ExpectedOutgoingCrossChainCall[](1);
         nested1[0] = ExpectedOutgoingCrossChainCall({
-            crossChainCallHash: innerCounterL1, callCount: 0, returnData: abi.encode(uint256(2))
+            crossChainCallHash: innerCounterL1,
+            callCount: 0,
+            returnData: abi.encode(uint256(2))
         });
 
         entries = new L2ExecutionEntry[](3);
@@ -312,7 +340,8 @@ abstract contract MCNActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: _l2NestedHash()
+            rollingHash: _l2NestedHash(),
+            crossChainRollingHash: _l2NestedCrossChainHash(calls0[0], nested0[0])
         });
         entries[1] = L2ExecutionEntry({
             proxyEntryHash: outerCAP2,
@@ -321,7 +350,8 @@ abstract contract MCNActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: _l2NestedHash()
+            rollingHash: _l2NestedHash(),
+            crossChainRollingHash: _l2NestedCrossChainHash(calls1[0], nested1[0])
         });
         entries[2] = L2ExecutionEntry({
             proxyEntryHash: outerCounterL2,
@@ -330,7 +360,10 @@ abstract contract MCNActions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: abi.encode(uint256(1)),
-            rollingHash: _l2SimpleHash()
+            rollingHash: _l2SimpleHash(),
+            crossChainRollingHash: l2CrossChainRollingHashFold(
+                bytes32(0), L2_ROLLUP_ID, calls2[0], true, abi.encode(uint256(1))
+            )
         });
     }
 }

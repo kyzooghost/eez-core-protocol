@@ -27,6 +27,8 @@ import {
     noLookupCalls,
     noL2LookupCalls,
     getOrCreateProxy,
+    l2CrossChainRollingHashFold,
+    crossChainRollingHashFold,
     RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
@@ -105,7 +107,23 @@ abstract contract NestedL2Actions {
         h = h.appendCallEnd(1, true, "");
     }
 
-    function _l2Entries(address counterL1, address cap, address alice)
+    function _expectedCrossChainRollingHash(
+        CrossChainCall memory call,
+        ExpectedOutgoingCrossChainCall memory nested
+    )
+        internal
+        pure
+        returns (bytes32 h)
+    {
+        h = crossChainRollingHashFold(h, nested.crossChainCallHash, true, nested.returnData);
+        h = l2CrossChainRollingHashFold(h, L2_ROLLUP_ID, call, true, "");
+    }
+
+    function _l2Entries(
+        address counterL1,
+        address cap,
+        address alice
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -123,7 +141,9 @@ abstract contract NestedL2Actions {
 
         ExpectedOutgoingCrossChainCall[] memory nested = new ExpectedOutgoingCrossChainCall[](1);
         nested[0] = ExpectedOutgoingCrossChainCall({
-            crossChainCallHash: _l2InnerHash(counterL1, cap), callCount: 0, returnData: abi.encode(uint256(1))
+            crossChainCallHash: _l2InnerHash(counterL1, cap),
+            callCount: 0,
+            returnData: abi.encode(uint256(1))
         });
 
         entries = new L2ExecutionEntry[](1);
@@ -134,13 +154,18 @@ abstract contract NestedL2Actions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: _expectedRollingHash()
+            rollingHash: _expectedRollingHash(),
+            crossChainRollingHash: _expectedCrossChainRollingHash(calls[0], nested[0])
         });
     }
 
     /// L1 mirror entry — system-driven (proxyEntryHash=0); drained by executeL2TX(L2_ROLLUP_ID).
     /// `l2ToL1Calls[0]` is the inbound call delivered through the source proxy for (cap, L2) on L1.
-    function _l1Entries(address counterL2Target, address capL1, address capL2)
+    function _l1Entries(
+        address counterL2Target,
+        address capL1,
+        address capL2
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)

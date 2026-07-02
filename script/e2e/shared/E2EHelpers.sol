@@ -54,6 +54,31 @@ function crossChainCallHash(
     return keccak256(abi.encode(targetRollupId, targetAddress, value, data, sourceAddress, sourceRollupId));
 }
 
+function l2CrossChainRollingHashFold(
+    bytes32 prev,
+    uint256 rollupId,
+    CrossChainCall memory cc,
+    bool success,
+    bytes memory retData
+)
+    pure
+    returns (bytes32)
+{
+    return crossChainRollingHashFold(
+        prev,
+        crossChainCallHash(rollupId, cc.targetAddress, cc.value, cc.data, cc.sourceAddress, cc.sourceRollupId),
+        success,
+        retData
+    );
+}
+
+function crossChainRollingHashFold(bytes32 prev, bytes32 callHash, bool success, bytes memory retData)
+    pure
+    returns (bytes32)
+{
+    return keccak256(abi.encodePacked(prev, callHash, success, retData));
+}
+
 /// @notice **Backward-compatibility shim** for legacy E2E scripts.
 /// @dev The `Action` struct was removed from `IEEZ.sol`. E2E flow scripts
 ///      pre-refactor used it heavily as an off-chain "tooling-side" record of the inputs

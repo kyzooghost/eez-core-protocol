@@ -26,6 +26,8 @@ import {
     noLookupCalls,
     noNestedActions,
     noCalls,
+    l2CrossChainRollingHashFold,
+    crossChainRollingHashFold,
     RollingHashBuilder
 } from "../shared/E2EHelpers.sol";
 
@@ -112,7 +114,10 @@ abstract contract RevertContinueL2Actions {
     /// @dev L1 mirror entry: system-driven (proxyEntryHash=0) — drained by executeL2TX.
     ///      `l2ToL1Calls[0]` is the inbound call from SelfCaller (on L2) to Counter on MAINNET,
     ///      delivered through the lazily-created source proxy for (SelfCaller, L2_ROLLUP_ID) on L1.
-    function _l1Entries(address counterL1, address selfCallerL2)
+    function _l1Entries(
+        address counterL1,
+        address selfCallerL2
+    )
         internal
         pure
         returns (ExecutionEntry[] memory entries)
@@ -150,7 +155,11 @@ abstract contract RevertContinueL2Actions {
         });
     }
 
-    function _l2Entries(address selfCaller, address counterL1, address alice)
+    function _l2Entries(
+        address selfCaller,
+        address counterL1,
+        address alice
+    )
         internal
         pure
         returns (L2ExecutionEntry[] memory entries)
@@ -181,7 +190,14 @@ abstract contract RevertContinueL2Actions {
             expectedLookups: new L2ExpectedLookup[](0),
             callCount: 1,
             returnData: "",
-            rollingHash: _expectedRollingHash()
+            rollingHash: _expectedRollingHash(),
+            crossChainRollingHash: l2CrossChainRollingHashFold(
+                crossChainRollingHashFold(bytes32(0), nested[0].crossChainCallHash, true, nested[0].returnData),
+                L2_ROLLUP_ID,
+                calls[0],
+                true,
+                ""
+            )
         });
     }
 }

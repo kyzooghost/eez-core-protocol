@@ -143,7 +143,11 @@ contract IntegrationTestBridge is Test {
     /// @param calls The calls in the entry
     /// @param successes Whether each call succeeds
     /// @param retDatas The return data from each call
-    function _computeRollingHash(L2ToL1Call[] memory calls, bool[] memory successes, bytes[] memory retDatas)
+    function _computeRollingHash(
+        L2ToL1Call[] memory calls,
+        bool[] memory successes,
+        bytes[] memory retDatas
+    )
         internal
         pure
         returns (bytes32 hash)
@@ -157,7 +161,11 @@ contract IntegrationTestBridge is Test {
     }
 
     /// @dev L2 overload: same rolling-hash schema over IEEZL2 CrossChainCall[]
-    function _computeRollingHash(CrossChainCall[] memory calls, bool[] memory successes, bytes[] memory retDatas)
+    function _computeRollingHash(
+        CrossChainCall[] memory calls,
+        bool[] memory successes,
+        bytes[] memory retDatas
+    )
         internal
         pure
         returns (bytes32 hash)
@@ -168,6 +176,41 @@ contract IntegrationTestBridge is Test {
             hash = keccak256(abi.encodePacked(hash, CALL_BEGIN, callNumber));
             hash = keccak256(abi.encodePacked(hash, CALL_END, callNumber, successes[i], retDatas[i]));
         }
+    }
+
+    function _computeL2CrossChainRollingHash(
+        CrossChainCall[] memory calls,
+        bool[] memory successes,
+        bytes[] memory retDatas
+    )
+        internal
+        pure
+        returns (bytes32 hash)
+    {
+        for (uint256 i = 0; i < calls.length; i++) {
+            bytes32 callHash = _crossChainCallHash(
+                L2_ROLLUP_ID,
+                calls[i].targetAddress,
+                calls[i].value,
+                calls[i].data,
+                calls[i].sourceAddress,
+                calls[i].sourceRollupId
+            );
+            hash = keccak256(abi.encodePacked(hash, callHash, successes[i], retDatas[i]));
+        }
+    }
+
+    function _foldCrossChainRollingHash(
+        bytes32 hash,
+        bytes32 callHash,
+        bool success,
+        bytes memory retData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(hash, callHash, success, retData));
     }
 
     /// @dev Helper to create an empty L1 LookupCall array
@@ -319,6 +362,9 @@ contract IntegrationTestBridge is Test {
             entries[0].callCount = 1;
             entries[0].returnData = "";
             entries[0].rollingHash = l2RollingHash;
+            entries[0].crossChainRollingHash = _foldCrossChainRollingHash(
+                _computeL2CrossChainRollingHash(l2Calls, successes, retDatas), l2TriggerHash, true, ""
+            );
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(entries, _noL2LookupCalls());
@@ -377,7 +423,10 @@ contract IntegrationTestBridge is Test {
         {
             StateDelta[] memory stateDeltas = new StateDelta[](1);
             stateDeltas[0] = StateDelta({
-                rollupId: L2_ROLLUP_ID, currentState: keccak256("l2-initial-state"), newState: newState, etherDelta: 0
+                rollupId: L2_ROLLUP_ID,
+                currentState: keccak256("l2-initial-state"),
+                newState: newState,
+                etherDelta: 0
             });
 
             ExecutionEntry[] memory entries = new ExecutionEntry[](1);
@@ -443,6 +492,9 @@ contract IntegrationTestBridge is Test {
             entries[0].callCount = 1;
             entries[0].returnData = "";
             entries[0].rollingHash = l2RollingHash;
+            entries[0].crossChainRollingHash = _foldCrossChainRollingHash(
+                _computeL2CrossChainRollingHash(l2Calls, successes, retDatas), l2TriggerHash, true, ""
+            );
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(entries, _noL2LookupCalls());
@@ -498,7 +550,10 @@ contract IntegrationTestBridge is Test {
         {
             StateDelta[] memory stateDeltas = new StateDelta[](1);
             stateDeltas[0] = StateDelta({
-                rollupId: L2_ROLLUP_ID, currentState: keccak256("l2-initial-state"), newState: s1, etherDelta: 0
+                rollupId: L2_ROLLUP_ID,
+                currentState: keccak256("l2-initial-state"),
+                newState: s1,
+                etherDelta: 0
             });
 
             ExecutionEntry[] memory entries = new ExecutionEntry[](1);
@@ -558,6 +613,9 @@ contract IntegrationTestBridge is Test {
             entries[0].callCount = 1;
             entries[0].returnData = "";
             entries[0].rollingHash = fwdL2RollingHash;
+            entries[0].crossChainRollingHash = _foldCrossChainRollingHash(
+                _computeL2CrossChainRollingHash(fwdL2Calls, fwdSuccesses, fwdRetDatas), l2FwdTriggerHash, true, ""
+            );
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(entries, _noL2LookupCalls());
@@ -596,7 +654,7 @@ contract IntegrationTestBridge is Test {
         {
             L2ExecutionEntry[] memory entries = new L2ExecutionEntry[](1);
             entries[0].proxyEntryHash = retActionHash;
-            // No calls (simple resolution), no rolling hash needed
+            entries[0].crossChainRollingHash = _foldCrossChainRollingHash(bytes32(0), retActionHash, true, "");
 
             vm.prank(SYSTEM_ADDRESS);
             managerL2.loadExecutionTable(entries, _noL2LookupCalls());

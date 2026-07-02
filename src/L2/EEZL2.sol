@@ -109,7 +109,11 @@ contract EEZL2 is EEZBase {
 
     /// @notice Emitted after an entry's execution completes and all verifications pass
     event EntryExecuted(
-        uint256 indexed entryIndex, bytes32 rollingHash, uint256 callsProcessed, uint256 outgoingCallsConsumed
+        uint256 indexed entryIndex,
+        bytes32 rollingHash,
+        bytes32 crossChainRollingHash,
+        uint256 callsProcessed,
+        uint256 outgoingCallsConsumed
     );
 
     /// @notice Emitted after a revert span is processed via `executeInContextAndRevert`
@@ -136,7 +140,10 @@ contract EEZL2 is EEZBase {
     /// @dev Clears previous entries and stores new ones. Entries must be consumed in the same block.
     /// @param entries The execution entries to load
     /// @param _lookupCalls The lookup call results to load
-    function loadExecutionTable(ExecutionEntry[] calldata entries, LookupCall[] calldata _lookupCalls)
+    function loadExecutionTable(
+        ExecutionEntry[] calldata entries,
+        LookupCall[] calldata _lookupCalls
+    )
         external
         onlySystemAddress
     {
@@ -182,7 +189,10 @@ contract EEZL2 is EEZBase {
     /// @param sourceAddress The original caller address (msg.sender as seen by the proxy)
     /// @param callData The original calldata sent to the proxy
     /// @return result The return data from the execution
-    function executeCrossChainCall(address sourceAddress, bytes calldata callData)
+    function executeCrossChainCall(
+        address sourceAddress,
+        bytes calldata callData
+    )
         external
         payable
         returns (bytes memory result)
@@ -221,6 +231,10 @@ contract EEZL2 is EEZBase {
     ///      folds tagged events into the rolling hash, and handles `revertSpan`. Reentrant
     ///      cross-chain calls during execution see `_insideExecution() == true` and consume
     ///      from `executions[0].expectedOutgoingCalls`.
+    ///      Unlike `_consumeAndExecute`, this path does not add a final top-level
+    ///      cross-chain rolling-hash fold after `_processNCalls`: the inbound call itself is
+    ///      represented by `incomingCalls[0]`, so `_processNCalls` already folds it. Folding
+    ///      `crossChainCallHash` here would double count the same boundary call.
     /// @param destination The L2 destination address (target of the inbound call)
     /// @param value The ETH value forwarded to the destination
     /// @param data The calldata for the destination
@@ -269,12 +283,14 @@ contract EEZL2 is EEZBase {
         // 4. Bind the emitted call hash to the entry (mirrors L1 `_consumeAndExecute`).
         if (entry.proxyEntryHash != crossChainCallHash) revert EntryHashMismatch();
 
-        // 5. Drive the flat call processor — `entry.incomingCalls[0]` is the inbound call,
-        //    delivered via the source proxy by `_processNCalls`
+        // 5. Drive the flat call processor. `entry.incomingCalls[0]` is the inbound call,
+        //    delivered and cross-chain-hash-folded via the source proxy by `_processNCalls`.
+        _crossChainRollingHash = bytes32(0);
         _processNCalls(entry.callCount);
 
         // 6. Verify invariants (mirrors `_consumeAndExecute`'s post-checks)
         if (_rollingHash != entry.rollingHash) revert RollingHashMismatch();
+        if (_crossChainRollingHash != entry.crossChainRollingHash) revert CrossChainRollingHashMismatch();
         if (_currentIncomingCall != entry.incomingCalls.length) revert UnconsumedIncomingCalls();
         if (_lastOutgoingCallConsumed != entry.expectedOutgoingCalls.length) revert UnconsumedOutgoingCalls();
 
@@ -282,7 +298,7 @@ contract EEZL2 is EEZBase {
         //    SYSTEM_ADDRESS is not reentry-reachable so no `_insideExecution()` guard is needed.
         executionIndex = 1;
 
-        emit EntryExecuted(0, _rollingHash, _currentIncomingCall, _lastOutgoingCallConsumed);
+        emit EntryExecuted(0, _rollingHash, _crossChainRollingHash, _currentIncomingCall, _lastOutgoingCallConsumed);
         _currentIncomingCall = 0; // reset so _insideExecution() returns false
 
         return entry.returnData;
@@ -358,6 +374,7 @@ contract EEZL2 is EEZBase {
             _rollingHashNestedBegin(nestedNumber);
             _processNCalls(nested.callCount);
             _rollingHashNestedEnd(nestedNumber);
+            _crossChainRollingHashFold(crossChainCallHash, true, nested.returnData);
             return nested.returnData;
         }
 
@@ -419,16 +436,19 @@ contract EEZL2 is EEZBase {
 
         _currentEntryIndex = idx;
         _rollingHash = bytes32(0);
+        _crossChainRollingHash = bytes32(0);
         _currentIncomingCall = 0;
         _lastOutgoingCallConsumed = 0;
 
         _processNCalls(entry.callCount);
+        _crossChainRollingHashFold(crossChainCallHash, true, entry.returnData);
 
         if (_rollingHash != entry.rollingHash) revert RollingHashMismatch();
+        if (_crossChainRollingHash != entry.crossChainRollingHash) revert CrossChainRollingHashMismatch();
         if (_currentIncomingCall != entry.incomingCalls.length) revert UnconsumedIncomingCalls();
         if (_lastOutgoingCallConsumed != entry.expectedOutgoingCalls.length) revert UnconsumedOutgoingCalls();
 
-        emit EntryExecuted(idx, _rollingHash, _currentIncomingCall, _lastOutgoingCallConsumed);
+        emit EntryExecuted(idx, _rollingHash, _crossChainRollingHash, _currentIncomingCall, _lastOutgoingCallConsumed);
         _currentIncomingCall = 0; // reset so _insideExecution() returns false
 
         return entry.returnData;
@@ -439,7 +459,9 @@ contract EEZL2 is EEZBase {
         if (msg.sender != address(this)) revert NotSelf();
         _processNCalls(callCount);
         // L2 has no deferred no-match flag — always `false`.
-        revert ContextResult(_rollingHash, _lastOutgoingCallConsumed, _currentIncomingCall, false);
+        revert ContextResult(
+            _rollingHash, _lastOutgoingCallConsumed, _currentIncomingCall, false, _crossChainRollingHash
+        );
     }
 
     /// @notice Processes N calls from the flat entry.incomingCalls[] array
@@ -472,12 +494,19 @@ contract EEZL2 is EEZBase {
                         abi.encodeCall(CrossChainProxy.executeOnBehalf, (cc.targetAddress, cc.data))
                     );
                 } else {
-                    (success, retData) = sourceProxy.call{
-                        value: cc.value
-                    }(abi.encodeCall(CrossChainProxy.executeOnBehalf, (cc.targetAddress, cc.data)));
+                    (success, retData) = sourceProxy.call{value: cc.value}(
+                        abi.encodeCall(CrossChainProxy.executeOnBehalf, (cc.targetAddress, cc.data))
+                    );
                 }
 
                 _rollingHashCallEnd(_currentIncomingCall, success, retData);
+                _crossChainRollingHashFold(
+                    computeCrossChainCallHash(
+                        ROLLUP_ID, cc.targetAddress, cc.value, cc.data, cc.sourceAddress, cc.sourceRollupId
+                    ),
+                    success,
+                    retData
+                );
                 emit CallResult(_currentEntryIndex, _currentIncomingCall, success, retData);
                 processed++;
             } else {
@@ -487,7 +516,8 @@ contract EEZL2 is EEZBase {
                 try this.executeInContextAndRevert(revertSpan) {}
                 catch (bytes memory revertData) {
                     // L2 has no deferred no-match flag — ignore the 4th tuple element.
-                    (_rollingHash, _lastOutgoingCallConsumed, _currentIncomingCall,) = _decodeContextResult(revertData);
+                    (_rollingHash, _lastOutgoingCallConsumed, _currentIncomingCall,, _crossChainRollingHash) =
+                        _decodeContextResult(revertData);
                 }
 
                 calls[savedCallNumber].revertSpan = revertSpan;
@@ -509,13 +539,19 @@ contract EEZL2 is EEZBase {
         CrossChainCall[] storage calls,
         bytes32 rollingHash,
         bool failed,
-        bytes memory returnData
+        bytes memory returnData,
+        bytes32 crossChainRollingHash,
+        bytes32 lookupCallHash
     )
         internal
         view
         returns (bytes memory)
     {
-        if (_processNStaticCalls(calls) != rollingHash) revert RollingHashMismatch();
+        (bytes32 computedRollingHash, bytes32 computedCrossChainRollingHash) = _processNStaticCalls(calls);
+        if (computedRollingHash != rollingHash) revert RollingHashMismatch();
+        computedCrossChainRollingHash =
+            _crossChainRollingHashStaticFold(computedCrossChainRollingHash, lookupCallHash, !failed, returnData);
+        if (computedCrossChainRollingHash != crossChainRollingHash) revert CrossChainRollingHashMismatch();
         if (failed) {
             assembly {
                 revert(add(returnData, 0x20), mload(returnData))
@@ -535,7 +571,14 @@ contract EEZL2 is EEZBase {
         _insideRevertedLookup = true;
 
         _executeRevertedLookup(
-            el.callCount, el.rollingHash, el.incomingCalls.length, el.expectedOutgoingCalls.length, el.returnData
+            el.callCount,
+            el.rollingHash,
+            el.incomingCalls.length,
+            el.expectedOutgoingCalls.length,
+            el.returnData,
+            el.crossChainRollingHash,
+            el.crossChainCallHash,
+            el.failed
         );
     }
 
@@ -549,7 +592,14 @@ contract EEZL2 is EEZBase {
         _revertedLookupTopLevel = true;
 
         _executeRevertedLookup(
-            sc.callCount, sc.rollingHash, sc.incomingCalls.length, sc.expectedOutgoingCalls.length, sc.returnData
+            sc.callCount,
+            sc.rollingHash,
+            sc.incomingCalls.length,
+            sc.expectedOutgoingCalls.length,
+            sc.returnData,
+            sc.crossChainRollingHash,
+            sc.crossChainCallHash,
+            sc.failed
         );
     }
 
@@ -563,17 +613,23 @@ contract EEZL2 is EEZBase {
         bytes32 rollingHash,
         uint256 callsLength,
         uint256 reentrantLength,
-        bytes memory returnData
+        bytes memory returnData,
+        bytes32 crossChainRollingHash,
+        bytes32 lookupCallHash,
+        bool failed
     )
         internal
     {
         _rollingHash = bytes32(0);
+        _crossChainRollingHash = bytes32(0);
         _currentIncomingCall = 0;
         _lastOutgoingCallConsumed = 0;
 
         _processNCalls(callCount);
 
         if (_rollingHash != rollingHash) revert RollingHashMismatch();
+        _crossChainRollingHashFold(lookupCallHash, !failed, returnData);
+        if (_crossChainRollingHash != crossChainRollingHash) revert CrossChainRollingHashMismatch();
         if (_currentIncomingCall != callsLength) revert UnconsumedIncomingCalls();
         if (_lastOutgoingCallConsumed != reentrantLength) revert UnconsumedOutgoingCalls();
 
@@ -587,7 +643,11 @@ contract EEZL2 is EEZBase {
     /// @dev All proxies referenced must already be deployed; CREATE2 is unavailable inside a
     ///      STATICCALL frame. The accumulator is a local, not `_rollingHash`, so this is verified
     ///      against `LookupCall.rollingHash`. See `docs/CORE_PROTOCOL_SPEC.md` §E.2.
-    function _processNStaticCalls(CrossChainCall[] memory calls) internal view returns (bytes32 computedHash) {
+    function _processNStaticCalls(CrossChainCall[] memory calls)
+        internal
+        view
+        returns (bytes32 computedRollingHash, bytes32 computedCrossChainRollingHash)
+    {
         for (uint256 i = 0; i < calls.length; i++) {
             CrossChainCall memory cc = calls[i];
             address sourceProxy = computeCrossChainProxyAddress(cc.sourceAddress, cc.sourceRollupId);
@@ -595,7 +655,12 @@ contract EEZL2 is EEZBase {
             if (sourceProxy.code.length == 0) revert LookupCallProxyNotDeployed(sourceProxy);
             (bool success, bytes memory retData) =
                 sourceProxy.staticcall(abi.encodeCall(CrossChainProxy.executeOnBehalf, (cc.targetAddress, cc.data)));
-            computedHash = _rollingHashStaticResult(computedHash, success, retData);
+            bytes32 callHash = computeCrossChainCallHash(
+                ROLLUP_ID, cc.targetAddress, cc.value, cc.data, cc.sourceAddress, cc.sourceRollupId
+            );
+            computedRollingHash = _rollingHashStaticResult(computedRollingHash, success, retData);
+            computedCrossChainRollingHash =
+                _crossChainRollingHashStaticFold(computedCrossChainRollingHash, callHash, success, retData);
         }
     }
 
@@ -637,7 +702,14 @@ contract EEZL2 is EEZBase {
                     el.crossChainCallHash == crossChainCallHash && el.callNumber == callNum
                         && el.lastOutgoingCallConsumed == lastNA && el.executingLookupIndex == execIdx
                 ) {
-                    return _resolveStaticLookup(el.incomingCalls, el.rollingHash, el.failed, el.returnData);
+                    return _resolveStaticLookup(
+                        el.incomingCalls,
+                        el.rollingHash,
+                        el.failed,
+                        el.returnData,
+                        el.crossChainRollingHash,
+                        el.crossChainCallHash
+                    );
                 }
             }
             revert ExecutionNotFound();
@@ -647,7 +719,14 @@ contract EEZL2 is EEZBase {
         for (uint256 i = 0; i < lookupCalls.length; i++) {
             LookupCall storage sc = lookupCalls[i];
             if (sc.crossChainCallHash == crossChainCallHash) {
-                return _resolveStaticLookup(sc.incomingCalls, sc.rollingHash, sc.failed, sc.returnData);
+                return _resolveStaticLookup(
+                    sc.incomingCalls,
+                    sc.rollingHash,
+                    sc.failed,
+                    sc.returnData,
+                    sc.crossChainRollingHash,
+                    sc.crossChainCallHash
+                );
             }
         }
 
