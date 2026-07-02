@@ -109,7 +109,11 @@ contract EEZL2 is EEZBase {
 
     /// @notice Emitted after an entry's execution completes and all verifications pass
     event EntryExecuted(
-        uint256 indexed entryIndex, bytes32 rollingHash, uint256 callsProcessed, uint256 outgoingCallsConsumed
+        uint256 indexed entryIndex,
+        bytes32 rollingHash,
+        bytes32 crossChainRollingHash,
+        uint256 callsProcessed,
+        uint256 outgoingCallsConsumed
     );
 
     /// @notice Emitted after a revert span is processed via `executeInContextAndRevert`
@@ -290,7 +294,7 @@ contract EEZL2 is EEZBase {
         //    SYSTEM_ADDRESS is not reentry-reachable so no `_insideExecution()` guard is needed.
         executionIndex = 1;
 
-        emit EntryExecuted(0, _rollingHash, _currentIncomingCall, _lastOutgoingCallConsumed);
+        emit EntryExecuted(0, _rollingHash, _crossChainRollingHash, _currentIncomingCall, _lastOutgoingCallConsumed);
         _currentIncomingCall = 0; // reset so _insideExecution() returns false
 
         return entry.returnData;
@@ -439,7 +443,7 @@ contract EEZL2 is EEZBase {
         if (_currentIncomingCall != entry.incomingCalls.length) revert UnconsumedIncomingCalls();
         if (_lastOutgoingCallConsumed != entry.expectedOutgoingCalls.length) revert UnconsumedOutgoingCalls();
 
-        emit EntryExecuted(idx, _rollingHash, _currentIncomingCall, _lastOutgoingCallConsumed);
+        emit EntryExecuted(idx, _rollingHash, _crossChainRollingHash, _currentIncomingCall, _lastOutgoingCallConsumed);
         _currentIncomingCall = 0; // reset so _insideExecution() returns false
 
         return entry.returnData;

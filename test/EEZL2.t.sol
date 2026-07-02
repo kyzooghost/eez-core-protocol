@@ -239,6 +239,34 @@ contract EEZL2Test is Test {
         assertEq(target.value(), 42);
     }
 
+    function test_EntryExecuted_EmitsCrossChainRollingHash() public {
+        // Arrange
+        address proxy = manager.createCrossChainProxy(address(target), REMOTE_ROLLUP_ID);
+        bytes memory callData = abi.encodeCall(L2TestTarget.setValue, (42));
+        bytes32 crossChainCallHash =
+            _computeActionHash(REMOTE_ROLLUP_ID, address(target), 0, callData, address(this), TEST_ROLLUP_ID);
+
+        CrossChainCall memory cc = CrossChainCall({
+            isStatic: false,
+            targetAddress: address(target),
+            value: 0,
+            data: callData,
+            sourceAddress: address(this),
+            sourceRollupId: REMOTE_ROLLUP_ID,
+            revertSpan: 0
+        });
+
+        bytes32 rollingHash = _rollingHashSingleCall("");
+        ExecutionEntry memory entry = _buildSimpleEntry(crossChainCallHash, cc, "", rollingHash);
+        _loadSingleEntry(entry);
+
+        // Act / Assert
+        vm.expectEmit(true, false, false, true);
+        emit EEZL2.EntryExecuted(0, rollingHash, entry.crossChainRollingHash, 1, 0);
+        (bool success,) = proxy.call(callData);
+        assertTrue(success);
+    }
+
     function test_LoadExecutionTable_MultipleEntries() public {
         address proxy = manager.createCrossChainProxy(address(target), REMOTE_ROLLUP_ID);
         bytes memory callData = abi.encodeCall(L2TestTarget.setValue, (42));
